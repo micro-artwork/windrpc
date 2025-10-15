@@ -1,0 +1,12 @@
+# MANIFEST.in
+
+# Include all files in the windrpc package
+recursive-include windrpc *
+
+# Exclude unnecessary files
+global-prune __pycache__
+global-exclude *.pyc
+
+# Documentation files
+include README.md
+include LICENSE

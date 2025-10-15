@@ -1,0 +1,73 @@
+platform_version_code: 1
+
+types:
+  enums:
+    - { name: StatusCode, prefix: STATUS_CODE_, members: [
+            # 0 ~ 17 (gRPC Status: https://grpc.github.io/grpc/core/md_doc_statuscodes.html)
+            # { value: 0, name: OK },
+            { value: 0, name: NONE },
+            { value: 1, name: CANCELLED },
+            { value: 2, name: UNKNOWN },
+            { value: 3, name: INVALID_ARGUMENT },
+            { value: 4, name: DEADLINE_EXCEEDED },
+            { value: 5, name: NOT_FOUND },
+            { value: 6, name: ALREADY_EXISTS },
+            { value: 7, name: PERMISSION_DENIED },
+            { value: 8, name: RESOURCE_EXHAUSTED },
+            { value: 9, name: FAILED_PRECONDITION },
+            { value: 10, name: ABORTED },
+            { value: 11, name: OUT_OF_RANGE },
+            { value: 12, name: UNIMPLEMENTED },
+            { value: 13, name: INTERNAL },
+            { value: 14, name: UNAVAILABLE },
+            { value: 15, name: DATA_LOSS },
+            { value: 16, name: UNAUTHENTICATED },
+            # serialize/deserialize error
+            { value: 17, name: INVALID_DATA_FORMAT }, # decoding failed
+            { value: 18, name: MISSING_REQUIRED_FIELD },
+            { value: 19, name: VERSION_MISMATCH },
+          ] }
+  messages:
+    - name: Empty # if camel case or lower case or snake case, will be converted to pascal case
+      description: 'No message(parameters/return value, void like in C/C++)'
+      fields: []
+    - name: Subscribe
+      description: '비동기 알림을 구독/해지할 때 사용되는 메시지'
+      fields:
+        - number: 1
+          name: enable
+          type: bool
+          description: 'true: subscribe, false: unsubscribe'
+        - number: 2
+          name: data
+          type: bytes
+          property: optional
+          description: 'user command or data'
+          nanopb: { max_length: 32 }
+    - name: Status
+      description: '에러 응답을 위해 사용되는 메시지'
+      fields:
+        - number: 1
+          name: code
+          type: int32
+        - number: 2
+          name: message
+          type: string
+          property: optional
+        - number: 3
+          name: details
+          type: bytes
+          property: optional
+
+## ---------------------------------------------------------------------------
+## Core Services
+
+services:
+  - id: 6
+    name: common
+    rpcs:
+      - id: 1
+        name: ping
+        type: REQUEST_RESPONSE
+        command: types.Empty
+        result: uint32
