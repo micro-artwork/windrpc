@@ -121,9 +121,7 @@ static bool decode_request_id(pb_istream_t *stream, const pb_field_t *field, voi
     if (len >= WINDRPC_REQUEST_ID_MAX_LEN) return false;
     if (!pb_read(stream, ctx->request_id, len)) return false;
     ctx->request_id_len = len;
-    if (WINDRPC_REQUEST_ID_TYPE == 1) {
-        ctx->request_id[len] = '\0';
-    }
+    ctx->request_id[len] = '\0';
     return true;
 }
 
@@ -188,6 +186,9 @@ static bool encode_request_id(pb_ostream_t *stream, const pb_field_t *field, voi
 
 static bool encode_string(pb_ostream_t *stream, const pb_field_t *field, void *const *arg) {
     const char *str = (const char *)(*arg);
+    if (str == NULL) {
+        str = "";
+    }
     printf("[windrpc_encode_string]: %s\n", str);
     if (!pb_encode_tag_for_field(stream, field)) return false;
     return pb_encode_string(stream, (const uint8_t *)str, strlen(str));
