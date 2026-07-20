@@ -193,8 +193,8 @@ typedef WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_core_Notification) windrpc_no
     case WINDRPC_SERVICE_REQUEST_CMD_TAG(service, command): { \
         ctx->proc = &windrpc_service.service->command;        \
         ctx->which_payload = resp;                            \
-        if (ctx->proc->decode_cmd != NULL) {                  \
-            return ctx->proc->decode_cmd(stream, field, arg); \
+        if (ctx->proc->decode_req != NULL) {                  \
+            return ctx->proc->decode_req(stream, field, arg); \
         }                                                     \
         return true;                                          \
     }
@@ -204,8 +204,8 @@ typedef WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_core_Notification) windrpc_no
         LOG_DBG("Matched led rpc: display_pixels");               \
         ctx->proc = &windrpc_service.user->service->command;      \
         ctx->which_payload = resp;                                \
-        if (ctx->proc->decode_cmd != NULL) {                      \
-            return ctx->proc->decode_cmd(stream, field, arg);     \
+        if (ctx->proc->decode_req != NULL) {                      \
+            return ctx->proc->decode_req(stream, field, arg);     \
         }                                                         \
         return true;
 

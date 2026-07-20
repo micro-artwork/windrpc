@@ -29,9 +29,17 @@
 #endif
 
 struct windrpc_buffer {
-    uint8_t *data;
-    uint16_t size;
+    uint8_t *data; // rx or inplace data buffer
+    uint16_t size; // rx or inplace data size
     uint16_t bytes_written;
+
+#if defined(WINDRPC_USE_INPLACE_BUFFER) && (WINDRPC_USE_INPLACE_BUFFER == 1)
+    #define tx_data data
+    #define tx_size size
+#else
+    uint8_t *tx_data;  // separate tx data buffer
+    uint16_t tx_size;  // separate tx data size
+#endif
 };
 
 // union windrpc_operation {
@@ -41,7 +49,7 @@ struct windrpc_operation {
 };
 
 struct windrpc_procedure {
-    bool (*decode_cmd)(pb_istream_t *stream, const pb_field_t *field, void **arg);
+    bool (*decode_req)(pb_istream_t *stream, const pb_field_t *field, void **arg);
     int32_t (*execute)(struct windrpc_operation *operation, void *context);
     void (*encode_res)(windrpc_response_msg_t *message, void *context);
 };
@@ -70,7 +78,7 @@ struct windrpc_transaction {
     struct windrpc_operation operation;
 };
 
-typedef bool (*windrpc_decode_cmd_t)(pb_istream_t *stream, const pb_field_t *field, void **arg);
+typedef bool (*windrpc_decode_req_t)(pb_istream_t *stream, const pb_field_t *field, void **arg);
 // typedef int32_t (*windrpc_execute_t)(windrpc_client_msg_t *message, struct windrpc_context *context);
 typedef int32_t (*windrpc_execute_t)(struct windrpc_operation *operation, struct windrpc_context *context);
 typedef void (*windrpc_encode_res_t)(windrpc_response_msg_t *message, struct windrpc_context *context);

@@ -7,4 +7,10 @@
 
 #define WINDRPC_LOG_LEVEL LOG_LEVEL_INF
 
+// [Default] 0: Separate rx/tx buffers (Double Buffer) for safety.
+//           1: Share a single buffer for rx/tx (In-place) to save RAM.
+#ifndef WINDRPC_USE_INPLACE_BUFFER
+#define WINDRPC_USE_INPLACE_BUFFER 0
+#endif
+
 #endif

@@ -18,7 +18,7 @@ void encode_ping(windrpc_response_msg_t *message, void *context) {
 
 static struct windrpc_service_common windrpc_common_service = {
     .ping = {
-        .decode_cmd = NULL,
+        .decode_req = NULL,
         .encode_res = encode_ping,
         .execute = execute_ping,
     }};
@@ -78,7 +78,7 @@ int32_t windrpc_handle(struct windrpc_transaction *txn) {
     }
 
     if (ctx->which_payload == WINDRPC_SERVER_RESPONSE_TAG) {
-        pb_ostream_t ostream = pb_ostream_from_buffer(buffer->data, buffer->size);
+        pb_ostream_t ostream = pb_ostream_from_buffer(buffer->tx_data, buffer->tx_size);
         status = encode_response(&ostream, txn);
         if (status != 0) {
             LOG_ERR("Encoding failed with framework error: %d", status);
@@ -99,7 +99,7 @@ int32_t windrpc_notify(struct windrpc_transaction *txn) {
     struct windrpc_buffer *buffer = &txn->buffer;
     windrpc_server_msg_t *msg = &txn->operation.server_msg;
     msg->which_payload = WINDRPC_SERVER_NOTIFICAION_TAG;
-    pb_ostream_t ostream = pb_ostream_from_buffer(buffer->data, buffer->size);
+    pb_ostream_t ostream = pb_ostream_from_buffer(buffer->tx_data, buffer->tx_size);
     if (!pb_encode(&ostream, WINDRPC_SERVER_MESSAGE_FIELDS, msg)) {
         LOG_ERR("Failed to encode notification stream: %s", PB_GET_ERROR(&ostream));
         return -1;
