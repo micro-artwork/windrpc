@@ -1,12 +1,15 @@
 # utils/spec_validator.py
-from utils.converter import to_pascal_case
 import sys
 import os
 
 # 경로 설정을 통해 converter 모듈을 임포트
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
-sys.path.append(parent_dir)
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
+from utils.converter import to_pascal_case
+import re
 
 
 class ValidationError:
@@ -35,9 +38,59 @@ def validate(spec_data, verbose=False):
         print("--- Starting YAML Specification Validation ---")
 
     # --- 1. 사전 계산 ---
+    IDENTIFIER_PATTERN = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+    SNAKE_CASE_PATTERN = re.compile(r'^[a-z0-9_]+$')
+    PASCAL_CASE_PATTERN = re.compile(r'^[A-Z][a-zA-Z0-9]*$')
+    UPPER_SNAKE_CASE_PATTERN = re.compile(r'^[A-Z0-9_]+$')
+    SERVICE_NAME_PATTERN = re.compile(r'^[a-z][a-z0-9_]*$')
+
+    def validate_name(name, expected_type, context, line):
+        if not name or not isinstance(name, str):
+            errors.append(ValidationError("Name must be a non-empty string.", context, line))
+            return False
+
+        if not IDENTIFIER_PATTERN.match(name):
+            errors.append(ValidationError(
+                f"Name '{name}' contains invalid characters. Must start with a letter/underscore and contain only letters, numbers, and underscores.",
+                context, line
+            ))
+            return False
+
+        if expected_type == 'service':
+            if not SERVICE_NAME_PATTERN.match(name):
+                errors.append(ValidationError(
+                    f"Service name '{name}' violates styling rules. Must be in snake_case (lowercase, numbers, and underscores, starting with a letter).",
+                    context, line
+                ))
+                return False
+        elif expected_type in ('message', 'enum'):
+            if not PASCAL_CASE_PATTERN.match(name):
+                errors.append(ValidationError(
+                    f"{expected_type.capitalize()} name '{name}' violates styling rules. Must be in PascalCase (alphanumeric, starting with a capital letter, no underscores).",
+                    context, line
+                ))
+                return False
+        elif expected_type in ('field', 'rpc'):
+            if not SNAKE_CASE_PATTERN.match(name):
+                errors.append(ValidationError(
+                    f"{expected_type.upper()} name '{name}' violates styling rules. Must be in snake_case (lowercase, numbers, and underscores).",
+                    context, line
+                ))
+                return False
+        elif expected_type == 'enum_member':
+            if not UPPER_SNAKE_CASE_PATTERN.match(name):
+                errors.append(ValidationError(
+                    f"Enum member name '{name}' violates styling rules. Must be in UPPER_SNAKE_CASE (uppercase letters, numbers, and underscores).",
+                    context, line
+                ))
+                return False
+        return True
+
     PROTO_SCALAR_TYPES = {'double', 'float', 'int32', 'int64', 'uint32', 'uint64', 'sint32',
                           'sint64', 'fixed32', 'fixed64', 'sfixed32', 'sfixed64', 'bool', 'string', 'bytes'}
     package_name = spec_data.get('package')
+    if package_name:
+        validate_name(package_name, 'service', 'package name', None)
     types_spec = spec_data.get('types', {})
     services = spec_data.get('services') or []
     VALID_RPC_TYPES = {'REQUEST_ONLY', 'REQUEST_RESPONSE', 'NOTIFICATION'}
@@ -148,6 +201,8 @@ def validate(spec_data, verbose=False):
         check_uniqueness(all_fields, 'name', context_name)
 
         for field in all_fields:
+            field_name = field.get('name')
+            validate_name(field_name, 'field', f"{context_name} -> field '{field_name}'", field.get('__line__'))
             if not is_valid_type(field.get('type'), current_service_name):
                 errors.append(ValidationError(
                     f"Invalid type '{field.get('type')}' for field '{field.get('name')}'.", context_name, field.get('__line__')))
@@ -194,6 +249,9 @@ def validate(spec_data, verbose=False):
             for i, member in enumerate(enum_members):
                 member_name = member.get('name', 'N/A')
                 line = member.get('__line__')
+
+                # 멤버 명명 스타일 검사
+                validate_name(member_name, 'enum_member', f"{enum_context} -> member '{member_name}'", line)
 
                 # 'value'가 명시적으로 정의된 경우에만 중복을 검사
                 if 'value' in member:
@@ -269,8 +327,14 @@ def validate(spec_data, verbose=False):
         types_enums, 'name', "types.enums", to_pascal_case)
 
     for msg_def in types_messages:
+        msg_name = msg_def.get('name')
+        validate_name(msg_name, 'message', f"types.message '{msg_name}'", msg_def.get('__line__'))
         validate_fields(
             msg_def, f"types.message '{msg_def.get('name')}'", None)
+
+    for enum_def in types_enums:
+        enum_name = enum_def.get('name')
+        validate_name(enum_name, 'enum', f"types.enum '{enum_name}'", enum_def.get('__line__'))
 
     # Enum 검증 로직 추가
     validate_enums(types_enums, "types")
@@ -284,6 +348,21 @@ def validate(spec_data, verbose=False):
     for svc in services:
         svc_name = svc.get('name', 'N/A')
         svc_context = f"service '{svc_name}'"
+        validate_name(svc_name, 'service', svc_context, svc.get('__line__'))
+        
+        # 서비스 ID 예약 구간 및 제약 검증
+        svc_id = svc.get('id')
+        if svc_id is not None:
+            if not isinstance(svc_id, int):
+                errors.append(ValidationError(
+                    f"Service ID must be an integer. Received: '{svc_id}'", svc_context, svc.get('__line__')))
+            elif svc_id < 1 or svc_id > 255:
+                errors.append(ValidationError(
+                    f"Service ID must be in range [1, 255]. Received: {svc_id}", svc_context, svc.get('__line__')))
+            elif 1 <= svc_id <= 6 and svc_name != 'common':
+                errors.append(ValidationError(
+                    f"Service ID {svc_id} is in reserved range [1, 6] for windrpc core services.", svc_context, svc.get('__line__')))
+
         if verbose:
             print(f"Validating {svc_context} for internal uniqueness...")
 
@@ -300,8 +379,14 @@ def validate(spec_data, verbose=False):
             service_enums, 'name', f"{svc_context} -> enums", to_pascal_case)
 
         for msg_def in service_messages:
+            msg_name = msg_def.get('name')
+            validate_name(msg_name, 'message', f"{svc_context} -> message '{msg_name}'", msg_def.get('__line__'))
             validate_fields(
                 msg_def, f"{svc_context} -> message '{msg_def.get('name')}'", svc_name)
+
+        for enum_def in service_enums:
+            enum_name = enum_def.get('name')
+            validate_name(enum_name, 'enum', f"{svc_context} -> enum '{enum_name}'", enum_def.get('__line__'))
 
         # 서비스 내 enum 검증 로직 추가
         validate_enums(service_enums, svc_context)
@@ -310,7 +395,20 @@ def validate(spec_data, verbose=False):
         check_uniqueness(rpcs, 'name', f"{svc_context} -> rpcs")
 
         for op in rpcs:
-            op_context = f"{svc_context} -> rpc '{op.get('name')}'"
+            op_name = op.get('name')
+            op_context = f"{svc_context} -> rpc '{op_name}'"
+            validate_name(op_name, 'rpc', op_context, op.get('__line__'))
+            
+            # RPC ID 유효 범위 및 제약 검증
+            op_id = op.get('id')
+            if op_id is not None:
+                if not isinstance(op_id, int):
+                    errors.append(ValidationError(
+                        f"RPC ID must be an integer. Received: '{op_id}'", op_context, op.get('__line__')))
+                elif op_id < 1 or op_id > 255:
+                    errors.append(ValidationError(
+                        f"RPC ID must be in range [1, 255]. Received: {op_id}", op_context, op.get('__line__')))
+
             type = op.get('type', '').upper()
             line = op.get('__line__')
 

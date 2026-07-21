@@ -75,6 +75,11 @@
 #define WINDRPC_WITH_RESP WINDRPC_SERVER_RESPONSE_TAG
 #define WINDRPC_WITHOUT_RESP 0
 
+/* Runtime-injected device information (serial_number etc.) */
+struct windrpc_device_info {
+    const char *serial_number; /* unique per-unit identifier, e.g. from chip UID */
+};
+
 /* -------------------------------------------------------------------------- */
 /*                               Message Fields                               */
 /* -------------------------------------------------------------------------- */
@@ -96,6 +101,12 @@
 
 #define WINDRPC_SERVICE_RESPONSE_FIELDS(service_name) \
     WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_service_, service_name, _Response_fields)
+
+#define WINDRPC_COMMON_DEVICE_INFO_FIELDS \
+    WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_service_common_DeviceInfo_fields)
+
+#define WINDRPC_COMMON_DEVICE_INFO_TYPE \
+    WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_service_common_DeviceInfo)
 
 #define WINDRPC_TYPES_FILED(message_name) \
     WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_types_, message_name, _fields)
@@ -164,53 +175,16 @@ typedef WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_core_Notification) windrpc_no
     WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_service_, service_name, _Response)
 
 /* -------------------------------------------------------------------------- */
-/*                                Service Entry                               */
+/*                               Dispatch Table                               */
 /* -------------------------------------------------------------------------- */
 
-#define WINDRPC_DECODE_FUNC(decode_func_name, ...)                                                         \
-    static bool decode_func_name(pb_istream_t *stream, const pb_field_t *field, void **arg) {              \
-        struct windrpc_context *ctx = (struct windrpc_context *)*arg;                                      \
-        switch (field->tag) {                                                                              \
-            __VA_ARGS__                                                                                    \
-            default:                                                                                       \
-                ctx->status_code = (int32_t)WINDRPC_STATUS_CODE(NOT_FOUND);                                \
-                snprintf(ctx->status_message, sizeof(ctx->status_message), "Unknown Tag: %d", field->tag); \
-                LOG_ERR("Unknown Tag: %d", field->tag);                                                    \
-                return false;                                                                              \
-        }                                                                                                  \
-    }
+struct windrpc_handler_entry {
+    int32_t (*decode_req)(pb_istream_t *stream, const pb_field_t *field, void *arg);
+    void (*encode_res)(windrpc_response_msg_t *response, void *context);
+    int32_t (*execute)(struct windrpc_operation *operation, void *context);
+    bool has_response;
+};
 
-#define WINDRPC_DECODE_SERVICE_ENTRY(service)                                                               \
-    case WINDRPC_SERVICE_REQUEST_TAG(service): {                                                            \
-        LOG_DBG("Decoding '" #service "' service request");                                                 \
-        WINDRPC_SERVICE_REQUEST_TYPE(service) *msg = (WINDRPC_SERVICE_REQUEST_TYPE(service) *)field->pData; \
-        msg->cb_command.funcs.decode = decode_service_##service;                                            \
-        msg->cb_command.arg = ctx;                                                                          \
-        return pb_decode(stream, WINDRPC_SERVICE_REQUEST_FIELDS(service), msg);                             \
-    }
-
-#define WINDRPC_DECODE_COMMAND_ENTRY(service, command, resp)  \
-    case WINDRPC_SERVICE_REQUEST_CMD_TAG(service, command): { \
-        ctx->proc = &windrpc_service.service->command;        \
-        ctx->which_payload = resp;                            \
-        if (ctx->proc->decode_req != NULL) {                  \
-            return ctx->proc->decode_req(stream, field, arg); \
-        }                                                     \
-        return true;                                          \
-    }
-
-#define WINDRPC_DECODE_USER_COMMAND_ENTRY(service, command, resp) \
-    case WINDRPC_SERVICE_REQUEST_CMD_TAG(service, command):       \
-        LOG_DBG("Matched led rpc: display_pixels");               \
-        ctx->proc = &windrpc_service.user->service->command;      \
-        ctx->which_payload = resp;                                \
-        if (ctx->proc->decode_req != NULL) {                      \
-            return ctx->proc->decode_req(stream, field, arg);     \
-        }                                                         \
-        return true;
-
-// --WINDRPC_DECODE_SERVICE_FUNC
-
-// --WINDRPC_DECODE_COMMAND_FUNC_LIST
+// --WINDRPC_RPC_INDEX_ENUM
 
 #endif  // WINDRPC_COMMON_H

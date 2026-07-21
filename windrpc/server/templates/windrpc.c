@@ -16,33 +16,44 @@ void encode_ping(windrpc_response_msg_t *message, void *context) {
     message->service.common.result.ping = WINDRPC_VERSION_CODE;
 }
 
-static struct windrpc_service_common windrpc_common_service = {
-    .ping = {
-        .decode_req = NULL,
-        .encode_res = encode_ping,
-        .execute = execute_ping,
-    }};
+static struct windrpc_device_info *device_info = NULL;
 
-struct windrpc_service windrpc_service = {
-    .common = NULL,
-    .user = NULL,
-};
+int32_t execute_get_device_info(struct windrpc_operation *operation, void *context) {
+    LOG_DBG("Execute: get_device_info");
+    return 0;
+}
 
-int32_t windrpc_init(struct windrpc_user_service *service) {
-    windrpc_service.common = &windrpc_common_service;
-    windrpc_service.user = service;
+static bool encode_device_info_result(pb_ostream_t *stream, const pb_field_t *field, void *const *arg) {
+    WINDRPC_COMMON_DEVICE_INFO_TYPE *info =
+        (WINDRPC_COMMON_DEVICE_INFO_TYPE *)field->pData;
+    if (info == NULL) return false;
 
-    if (windrpc_service.user == NULL) {
-        LOG_ERR("windrpc_service_internal is NULL");
-        return -1;
-    }
+    memset(info, 0, sizeof(*info));
+    strncpy(info->manufacturer_name, WINDRPC_MANUFACTURER_NAME, sizeof(info->manufacturer_name) - 1);
+    strncpy(info->model_number, WINDRPC_MODEL_NUMBER, sizeof(info->model_number) - 1);
+    strncpy(info->hw_revision, WINDRPC_HW_REVISION, sizeof(info->hw_revision) - 1);
+    strncpy(info->fw_revision, WINDRPC_FW_REVISION, sizeof(info->fw_revision) - 1);
 
-    // --WINDRPC_SERVICE_NULL_CHECK
-    if (windrpc_service.user->led == NULL || windrpc_service.user->power == NULL) {
-        LOG_ERR("windrpc user service are NULL");
-        return -1;
-    }
+    const char *serial = (device_info && device_info->serial_number)
+                         ? device_info->serial_number : "unknown";
+    strncpy(info->serial_number, serial, sizeof(info->serial_number) - 1);
 
+    return true;
+}
+
+void encode_get_device_info(windrpc_response_msg_t *message, void *context) {
+    message->which_service = WINDRPC_SERVICE_RESPONSE_TAG(common);
+    message->service.common.which_result = WINDRPC_SERVICE_RESPONSE_RESULT_TAG(common, get_device_info);
+    message->service.common.cb_result.funcs.encode = encode_device_info_result;
+    message->service.common.cb_result.arg = NULL;
+}
+
+// --WINDRPC_DISPATCH_TABLE
+
+// --WINDRPC_GET_COMMAND_TAG_AND_INDEX_FUNCS
+
+int32_t windrpc_init(struct windrpc_device_info *info) {
+    device_info = info;
     LOG_INF("windrpc framework initialized.");
     return 0;
 }
@@ -61,16 +72,13 @@ int32_t windrpc_handle(struct windrpc_transaction *txn) {
     int32_t status = decode_request(&istream, txn);
 
     if (status == 0) {
-        if (ctx->proc != NULL && ctx->proc->execute != NULL) {
-            // .client_msg.payload.request
-            status = ctx->proc->execute(&txn->operation, ctx);
+        if (ctx->handler != NULL && ctx->handler->execute != NULL) {
+            status = ctx->handler->execute(&txn->operation, ctx);
             if (status != 0) {
-                // 실행 오류는 클라이언트에게 응답해야 할 애플리케이션 레벨 오류
                 LOG_WRN("Execution failed with application error: %d", status);
                 ctx->status_code = status;
-                // 필요하다면 status 코드에 맞는 오류 메시지를 execution 단계에서 ctx->error_message에 지정
             }
-        } else {
+        } else if (ctx->status_code == 0) {
             ctx->status_code = (int32_t)WINDRPC_STATUS_CODE(UNIMPLEMENTED);
             snprintf(ctx->status_message, WINDRPC_STATUS_MESSAGE_MAX_LEN, "Method not implemented");
             LOG_ERR("No execute_func found");
@@ -82,7 +90,7 @@ int32_t windrpc_handle(struct windrpc_transaction *txn) {
         status = encode_response(&ostream, txn);
         if (status != 0) {
             LOG_ERR("Encoding failed with framework error: %d", status);
-            buffer->bytes_written = 0;  // 인코딩 실패 시 응답을 보낼 수 없음
+            buffer->bytes_written = 0;
             return -1;
         }
         buffer->bytes_written = ostream.bytes_written;
@@ -111,10 +119,6 @@ int32_t windrpc_notify(struct windrpc_transaction *txn) {
 /*                           Decode Request(Command)                          */
 /* -------------------------------------------------------------------------- */
 
-WINDRPC_DECODE_COMMAND_FUNC_LIST
-
-WINDRPC_DECODE_SERVICE_FUNC
-
 static bool decode_request_id(pb_istream_t *stream, const pb_field_t *field, void **arg) {
     struct windrpc_context *ctx = (struct windrpc_context *)*arg;
     size_t len = stream->bytes_left;
@@ -137,9 +141,6 @@ static bool decode_payload(pb_istream_t *stream, const pb_field_t *field, void *
             req->request_id.funcs.decode = decode_request_id;
             req->request_id.arg = ctx;
         }
-
-        req->cb_service.funcs.decode = decode_service;
-        req->cb_service.arg = ctx;
 
         if (!pb_decode(stream, WINDRPC_REQUEST_FIELDS, req)) {
             LOG_ERR("Failed to decode Request sub-message: %s", PB_GET_ERROR(stream));
@@ -171,6 +172,22 @@ static int32_t decode_request(pb_istream_t *stream, struct windrpc_transaction *
         }
         return -1;
     }
+
+    windrpc_request_msg_t *req = &msg->payload.request;
+    uint32_t service_tag = req->which_service;
+    uint32_t command_tag = get_command_tag(req);
+    windrpc_rpc_idx_t idx = windrpc_get_rpc_index(service_tag, command_tag);
+
+    if (idx == WINDRPC_RPC_IDX_UNKNOWN) {
+        ctx->status_code = (int32_t)WINDRPC_STATUS_CODE(UNIMPLEMENTED);
+        snprintf(ctx->status_message, WINDRPC_STATUS_MESSAGE_MAX_LEN, "Method not implemented");
+        LOG_ERR("No RPC handler found for service tag: %u, command tag: %u", service_tag, command_tag);
+        return 0;
+    }
+
+    ctx->handler = &rpc_dispatch_table[idx];
+    ctx->which_payload = ctx->handler->has_response ? WINDRPC_SERVER_RESPONSE_TAG : 0;
+
     return 0;
 }
 
@@ -216,8 +233,8 @@ static int32_t encode_response(pb_ostream_t *stream, struct windrpc_transaction 
             resp->service.status.message.funcs.encode = encode_string;
             resp->service.status.message.arg = ctx->status_message;
         }
-    } else if (ctx->proc != NULL && ctx->proc->encode_res != NULL) {
-        ctx->proc->encode_res(resp, ctx);
+    } else if (ctx->handler != NULL && ctx->handler->encode_res != NULL) {
+        ctx->handler->encode_res(resp, ctx);
     } else {
         LOG_ERR("Missing encode_res function for a method that requires a response.");
         return -1;

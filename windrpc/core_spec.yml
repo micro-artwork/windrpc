@@ -65,9 +65,23 @@ types:
 services:
   - id: 6
     name: common
+    messages:
+      - name: DeviceInfo
+        description: 'BLE DIS(Device Information Service) 참조 디바이스 정보 메시지'
+        fields:
+          - { number: 1, name: manufacturer_name, type: string, nanopb: { max_length: 64 } }
+          - { number: 2, name: model_number,       type: string, nanopb: { max_length: 64 } }
+          - { number: 3, name: serial_number,      type: string, nanopb: { max_length: 64 } }
+          - { number: 4, name: hw_revision,        type: string, nanopb: { max_length: 32 } }
+          - { number: 5, name: fw_revision,        type: string, nanopb: { max_length: 32 } }
     rpcs:
       - id: 1
         name: ping
         type: REQUEST_RESPONSE
         command: types.Empty
         result: uint32
+      - id: 2
+        name: get_device_info
+        type: REQUEST_RESPONSE
+        command: types.Empty
+        result: DeviceInfo

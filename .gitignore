@@ -63,3 +63,9 @@ dkms.conf
 /examples/self_enc_dec/build
 /examples/self_enc_dec/protos
 /examples/self_enc_dec/server
+
+__pycache__
+/windrpc/protos
+/tests/build
+/tests/generated
+.vscode

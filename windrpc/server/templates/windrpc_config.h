@@ -13,4 +13,26 @@
 #define WINDRPC_USE_INPLACE_BUFFER 0
 #endif
 
+/* -------------------------------------------------------------------------- */
+/*                     Device Information (BLE DIS reference)                  */
+/* -------------------------------------------------------------------------- */
+// Override these macros at build time (e.g. -DWINDRPC_MANUFACTURER_NAME='"MyCompany"')
+// or edit them directly in this file.
+
+#ifndef WINDRPC_MANUFACTURER_NAME
+#define WINDRPC_MANUFACTURER_NAME  "unknown"
+#endif
+
+#ifndef WINDRPC_MODEL_NUMBER
+#define WINDRPC_MODEL_NUMBER       "unknown"
+#endif
+
+#ifndef WINDRPC_HW_REVISION
+#define WINDRPC_HW_REVISION        "unknown"
+#endif
+
+#ifndef WINDRPC_FW_REVISION
+#define WINDRPC_FW_REVISION        "unknown"
+#endif
+
 #endif
