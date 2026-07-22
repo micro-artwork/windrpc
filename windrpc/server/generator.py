@@ -36,6 +36,75 @@ def _get_service_commands(spec_data):
     return cmd_dict
 
 
+def _get_rpc_types(rpc, service_name, package_name):
+    prefix = package_name.replace('/', '_').replace('-', '_').replace('.', '_')
+    rpc_type = rpc.get('type', '').upper()
+    cmd = rpc.get('command', 'types.Empty')
+    res = rpc.get('result', 'types.Empty')
+
+    # Command type
+    cmd_raw_pkg = None
+    cmd_raw_msg = None
+    if '.' in cmd:
+        cmd_raw_pkg, cmd_raw_msg = cmd.split('.')
+        cmd_c_type = f"rpc_{cmd_raw_pkg}_{cmd_raw_msg}_t"
+    elif cmd in ['uint32', 'int32', 'bool', 'uint64', 'int64', 'float', 'double']:
+        cmd_c_type = f"{cmd}_t"
+    else:
+        cmd_raw_pkg = service_name
+        cmd_raw_msg = cmd
+        cmd_c_type = f"rpc_{service_name}_{cmd}_t"
+
+    # Result type
+    is_submsg = True
+    res_fields = "NULL"
+    res_raw_pkg = None
+    res_raw_msg = None
+
+    if rpc_type == 'REQUEST_ONLY':
+        res_c_type = "void"
+        is_submsg = False
+        res_tag = "0"
+    elif res in ['uint32', 'int32', 'bool', 'uint64', 'int64', 'float', 'double']:
+        res_c_type = f"{res}_t"
+        is_submsg = False
+        res_tag = f"WINDRPC_SERVICE_RESPONSE_RESULT_TAG({service_name}, {rpc['name']})"
+    elif '.' in res:
+        res_raw_pkg, res_raw_msg = res.split('.')
+        res_c_type = f"rpc_{res_raw_pkg}_{res_raw_msg}_t"
+        res_fields = f"WINDRPC_TYPES_MSG_FIELDS({res_raw_msg})" if res_raw_pkg == 'types' else f"WINDRPC_SERVICE_MSG_FIELDS({res_raw_pkg}, {res_raw_msg})"
+        res_tag = f"WINDRPC_SERVICE_RESPONSE_RESULT_TAG({service_name}, {rpc['name']})"
+    else:
+        res_raw_pkg = service_name
+        res_raw_msg = res
+        res_c_type = f"rpc_{service_name}_{res}_t"
+        res_fields = f"WINDRPC_SERVICE_MSG_FIELDS({service_name}, {res})"
+        res_tag = f"WINDRPC_SERVICE_RESPONSE_RESULT_TAG({service_name}, {rpc['name']})"
+
+    if rpc_type == 'NOTIFICATION':
+        sub_name = f"subscribe_{rpc['name']}"
+        cmd_raw_pkg = "types"
+        cmd_raw_msg = "Subscribe"
+        cmd_c_type = "rpc_types_Subscribe_t"
+        res_raw_pkg = "types"
+        res_raw_msg = "Empty"
+        res_c_type = "rpc_types_Empty_t"
+        is_submsg = True
+        res_fields = "WINDRPC_TYPES_MSG_FIELDS(Empty)"
+        res_tag = f"WINDRPC_SERVICE_RESPONSE_RESULT_TAG({service_name}, {sub_name})"
+
+    return {
+        'rpc_type': rpc_type,
+        'cmd_type': cmd_c_type,
+        'res_type': res_c_type,
+        'is_submsg': is_submsg,
+        'res_fields': res_fields,
+        'res_tag': res_tag,
+        'res_raw_pkg': res_raw_pkg,
+        'res_raw_msg': res_raw_msg
+    }
+
+
 def _generate_rpc_index_enum(spec_data):
     services = spec_data.get('services', [])
     content = []
@@ -54,7 +123,33 @@ def _generate_rpc_index_enum(spec_data):
     return "".join(content)
 
 
-def _generate_dispatch_table(spec_data):
+def _generate_res_payload_union(spec_data, package_name):
+    services = spec_data.get('services', [])
+    content = []
+    content.append("union windrpc_res_payload {\n")
+    for service in services:
+        svc_name = service['name']
+        for rpc in service.get('rpcs', []):
+            info = _get_rpc_types(rpc, svc_name, package_name)
+            rpc_name = rpc['name']
+            if info['rpc_type'] == 'NOTIFICATION':
+                rpc_name = f"subscribe_{rpc_name}"
+            if info['res_type'] != 'void':
+                if info['res_raw_pkg'] and info['res_raw_msg']:
+                    pkg = info['res_raw_pkg']
+                    msg = info['res_raw_msg']
+                    if pkg == 'types':
+                        macro_type = f"WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_types_{msg})"
+                    else:
+                        macro_type = f"WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_service_{pkg}_{msg})"
+                else:
+                    macro_type = info['res_type']
+                content.append(f"    {macro_type} {svc_name}_{rpc_name};\n")
+    content.append("};\n")
+    return "".join(content)
+
+
+def _generate_dispatch_table(spec_data, package_name):
     services = spec_data.get('services', [])
     fw_decls = []
     table_entries = []
@@ -64,34 +159,32 @@ def _generate_dispatch_table(spec_data):
     for service in services:
         svc_name = service['name']
         for rpc in service.get('rpcs', []):
-            rpc_type = rpc.get('type', '').upper()
+            info = _get_rpc_types(rpc, svc_name, package_name)
             rpc_name = rpc['name']
-            if rpc_type == 'NOTIFICATION':
+            if info['rpc_type'] == 'NOTIFICATION':
                 rpc_name = f"subscribe_{rpc_name}"
 
-            has_res = (rpc_type != 'REQUEST_ONLY')
             exec_func = f"execute_{rpc_name}"
-            enc_func = f"encode_{rpc_name}" if has_res else "NULL"
 
-            fw_decls.append(f"int32_t {exec_func}(struct windrpc_operation *operation, void *context);\n")
-            if has_res:
-                fw_decls.append(f"void {enc_func}(windrpc_response_msg_t *response, void *context);\n")
+            if info['res_type'] == 'void':
+                fw_decls.append(f"int32_t {exec_func}(const {info['cmd_type']} *req, void *context);\n")
+            else:
+                fw_decls.append(f"int32_t {exec_func}(const {info['cmd_type']} *req, {info['res_type']} *res, void *context);\n")
 
             idx_name = f"WINDRPC_RPC_IDX_{svc_name.upper()}_{rpc_name.upper()}"
-            has_res_str = "true" if has_res else "false"
+            has_res_str = "true" if info['rpc_type'] != 'REQUEST_ONLY' else "false"
 
             table_entries.append(f"    [{idx_name}] = {{\n")
-            table_entries.append(f"        .decode_req = NULL,\n")
-            table_entries.append(f"        .encode_res = {enc_func},\n")
-            table_entries.append(f"        .execute = {exec_func},\n")
+            table_entries.append(f"        .execute = (int32_t (*)(const void *, void *, void *)){exec_func},\n")
             table_entries.append(f"        .has_response = {has_res_str},\n")
+            table_entries.append(f"        .res_tag = {info['res_tag']},\n")
             table_entries.append(f"    }},\n")
 
     table_entries.append("};\n")
     return "".join(fw_decls) + "\n" + "".join(table_entries)
 
 
-def _generate_get_command_tag_and_index_funcs(spec_data):
+def _generate_get_command_tag_and_index_funcs(spec_data, package_name):
     services = spec_data.get('services', [])
     content = []
 
@@ -126,6 +219,62 @@ def _generate_get_command_tag_and_index_funcs(spec_data):
     content.append("            break;\n")
     content.append("    }\n")
     content.append("    return WINDRPC_RPC_IDX_UNKNOWN;\n")
+    content.append("}\n\n")
+
+    content.append("static const void *windrpc_get_req_ptr(windrpc_request_msg_t *req, windrpc_rpc_idx_t idx) {\n")
+    content.append("    switch (idx) {\n")
+    for service in services:
+        svc_name = service['name']
+        for rpc in service.get('rpcs', []):
+            rpc_type = rpc.get('type', '').upper()
+            rpc_name = rpc['name']
+            if rpc_type == 'NOTIFICATION':
+                rpc_name = f"subscribe_{rpc_name}"
+            idx_name = f"WINDRPC_RPC_IDX_{svc_name.upper()}_{rpc_name.upper()}"
+            content.append(f"        case {idx_name}:\n")
+            content.append(f"            return &req->service.{svc_name}.command.{rpc_name};\n")
+    content.append("        default:\n")
+    content.append("            return NULL;\n")
+    content.append("    }\n")
+    content.append("}\n\n")
+
+    content.append("static void *windrpc_get_res_ptr(windrpc_response_msg_t *resp, windrpc_rpc_idx_t idx) {\n")
+    content.append("    switch (idx) {\n")
+    for service in services:
+        svc_name = service['name']
+        for rpc in service.get('rpcs', []):
+            rpc_type = rpc.get('type', '').upper()
+            if rpc_type == 'REQUEST_ONLY':
+                continue
+            rpc_name = rpc['name']
+            if rpc_type == 'NOTIFICATION':
+                rpc_name = f"subscribe_{rpc_name}"
+            idx_name = f"WINDRPC_RPC_IDX_{svc_name.upper()}_{rpc_name.upper()}"
+            content.append(f"        case {idx_name}:\n")
+            content.append(f"            return &resp->service.{svc_name}.result.{rpc_name};\n")
+    content.append("        default:\n")
+    content.append("            return NULL;\n")
+    content.append("    }\n")
+    content.append("}\n\n")
+
+    content.append("static void windrpc_set_response_result_tag(windrpc_response_msg_t *resp, windrpc_rpc_idx_t idx, uint32_t tag) {\n")
+    content.append("    switch (idx) {\n")
+    for service in services:
+        svc_name = service['name']
+        for rpc in service.get('rpcs', []):
+            rpc_type = rpc.get('type', '').upper()
+            if rpc_type == 'REQUEST_ONLY':
+                continue
+            rpc_name = rpc['name']
+            if rpc_type == 'NOTIFICATION':
+                rpc_name = f"subscribe_{rpc_name}"
+            idx_name = f"WINDRPC_RPC_IDX_{svc_name.upper()}_{rpc_name.upper()}"
+            content.append(f"        case {idx_name}:\n")
+            content.append(f"            resp->service.{svc_name}.which_result = tag;\n")
+            content.append(f"            break;\n")
+    content.append("        default:\n")
+    content.append("            break;\n")
+    content.append("    }\n")
     content.append("}\n")
 
     return "".join(content)
@@ -224,11 +373,11 @@ def _generate_windrpc_c_content(spec_data, package_name):
         for line in lines:
             if '--WINDRPC_DISPATCH_TABLE' in line:
                 content.append(line)
-                content.append(_generate_dispatch_table(spec_data))
+                content.append(_generate_dispatch_table(spec_data, package_name))
                 content.append('\n')
             elif '--WINDRPC_GET_COMMAND_TAG_AND_INDEX_FUNCS' in line:
                 content.append(line)
-                content.append(_generate_get_command_tag_and_index_funcs(spec_data))
+                content.append(_generate_get_command_tag_and_index_funcs(spec_data, package_name))
                 content.append('\n')
             else:
                 content.append(line)
@@ -269,7 +418,6 @@ def write_smart_merge(file_path, new_content):
             continue
 
         lines = block_strip.split('\n')
-        # Skip leading comments in block to find signature line
         sig_line = lines[0]
         for line in lines:
             if not line.strip().startswith('/*') and not line.strip().startswith('*'):
@@ -281,7 +429,7 @@ def write_smart_merge(file_path, new_content):
 
         key_token = None
         for token in tokens:
-            if token.startswith('execute_') or token.startswith('encode_') or token.startswith('rpc_notify_') or token.endswith('_service') or token == 'windrpc_services':
+            if token.startswith('execute_') or token.startswith('rpc_notify_') or token.endswith('_service') or token == 'windrpc_services':
                 key_token = token
                 break
 
@@ -307,7 +455,6 @@ def write_smart_merge(file_path, new_content):
 
 
 def _generate_callbacks_skeleton(spec_data, package_name):
-    prefix = package_name.replace('/', '_').replace('-', '_')
     services = spec_data.get('services', [])
 
     content = []
@@ -333,81 +480,37 @@ def _generate_callbacks_skeleton(spec_data, package_name):
             f"/* ========================================================================== */\n\n")
 
         for rpc in service.get('rpcs', []):
-            rpc_type = rpc.get('type', '').upper()
+            info = _get_rpc_types(rpc, svc_name, package_name)
             rpc_name = rpc['name']
 
-            if rpc_type == 'NOTIFICATION':
-                # Notification subscribe/unsubscribe handler
+            if info['rpc_type'] == 'NOTIFICATION':
                 sub_name = f"subscribe_{rpc_name}"
                 content.append(f"/**\n")
-                content.append(
-                    f" * @brief Execute handler for subscribing to {rpc_name}\n")
+                content.append(f" * @brief Execute handler for subscribing to {rpc_name}\n")
                 content.append(f" */\n")
-                content.append(
-                    f"int32_t execute_{sub_name}(struct windrpc_operation *operation, void *context) {{\n")
-                content.append(
-                    f"    printf(\"Execute subscription: {sub_name}\\n\");\n")
-                content.append(
-                    f"    // TODO: Implement subscription enable/disable check\n")
-                content.append(
-                    f"    // windrpc_request_msg_t *req = &operation->client_msg.payload.request;\n")
-                content.append(
-                    f"    // bool enable = req->service.{svc_name}.command.{sub_name}.enable;\n")
+                content.append(f"int32_t execute_{sub_name}(const rpc_types_Subscribe_t *req, rpc_types_Empty_t *res, void *context) {{\n")
+                content.append(f"    printf(\"Execute subscription: {sub_name}\\n\");\n")
+                content.append(f"    // TODO: Implement subscription enable/disable check (req->enable)\n")
                 content.append(f"    return 0;\n")
                 content.append(f"}}\n\n")
-
+            elif info['rpc_type'] == 'REQUEST_ONLY':
                 content.append(f"/**\n")
-                content.append(
-                    f" * @brief Response encoder for subscription of {rpc_name}\n")
+                content.append(f" * @brief Execute handler for RPC {rpc_name}\n")
                 content.append(f" */\n")
-                content.append(
-                    f"void encode_{sub_name}(windrpc_response_msg_t *response, void *context) {{\n")
-                content.append(
-                    f"    response->which_service = {prefix}_core_Response_{svc_name}_tag;\n")
-                content.append(
-                    f"    response->service.{svc_name}.which_result = {prefix}_service_{svc_name}_Response_{sub_name}_tag;\n")
-                content.append(
-                    f"    // TODO: Optionally fill subscribe response results\n")
-                content.append(f"}}\n\n")
-            else:
-                # Normal RPC (REQUEST_ONLY or REQUEST_RESPONSE)
-                content.append(f"/**\n")
-                content.append(
-                    f" * @brief Execute handler for RPC {rpc_name}\n")
-                content.append(f" */\n")
-                content.append(
-                    f"int32_t execute_{rpc_name}(struct windrpc_operation *operation, void *context) {{\n")
-                content.append(
-                    f"    printf(\"Execute RPC: {rpc_name}\\n\");\n")
+                content.append(f"int32_t execute_{rpc_name}(const {info['cmd_type']} *req, void *context) {{\n")
+                content.append(f"    printf(\"Execute RPC: {rpc_name}\\n\");\n")
                 content.append(f"    // TODO: Implement execution logic\n")
                 content.append(f"    return 0;\n")
                 content.append(f"}}\n\n")
-
-                if rpc_type == 'REQUEST_RESPONSE':
-                    result_type = rpc.get('result', 'types.Empty')
-                    # package prefix handling for result message
-                    if '.' in result_type:
-                        res_pkg, res_msg = result_type.split('.')
-                        full_res_type = f"{prefix}_service_{res_pkg}_{res_msg}" if res_pkg != 'types' else f"{prefix}_types_{res_msg}"
-                    else:
-                        full_res_type = f"{prefix}_service_{svc_name}_{result_type}"
-
-                    content.append(f"/**\n")
-                    content.append(
-                        f" * @brief Response encoder for RPC {rpc_name}\n")
-                    content.append(f" */\n")
-                    content.append(
-                        f"void encode_{rpc_name}(windrpc_response_msg_t *response, void *context) {{\n")
-                    content.append(
-                        f"    response->which_service = {prefix}_core_Response_{svc_name}_tag;\n")
-                    content.append(
-                        f"    response->service.{svc_name}.which_result = {prefix}_service_{svc_name}_Response_{rpc_name}_tag;\n")
-                    content.append(f"    \n")
-                    content.append(
-                        f"    // TODO: Populate response result fields below\n")
-                    content.append(
-                        f"    // {full_res_type} *res = &response->service.{svc_name}.result.{rpc_name};\n")
-                    content.append(f"}}\n\n")
+            else: # REQUEST_RESPONSE
+                content.append(f"/**\n")
+                content.append(f" * @brief Execute handler for RPC {rpc_name}\n")
+                content.append(f" */\n")
+                content.append(f"int32_t execute_{rpc_name}(const {info['cmd_type']} *req, {info['res_type']} *res, void *context) {{\n")
+                content.append(f"    printf(\"Execute RPC: {rpc_name}\\n\");\n")
+                content.append(f"    // TODO: Populate response result (*res)\n")
+                content.append(f"    return 0;\n")
+                content.append(f"}}\n\n")
 
     return "".join(content)
 

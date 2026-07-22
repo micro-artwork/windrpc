@@ -1,51 +1,33 @@
 #include "windrpc.h"
+#include <stdio.h>
+#include <string.h>
 
 LOG_MODULE_REGISTER(WINDRPC, WINDRPC_LOG_LEVEL);
 
 static int32_t decode_request(pb_istream_t *stream, struct windrpc_transaction *txn);
 static int32_t encode_response(pb_ostream_t *stream, struct windrpc_transaction *txn);
 
-int32_t execute_ping(struct windrpc_operation *operation, void *context) {
+int32_t execute_ping(const rpc_types_Empty_t *req, uint32_t *res, void *context) {
     LOG_DBG("Execute: ping");
+    if (res) *res = WINDRPC_VERSION_CODE;
     return 0;
-}
-
-void encode_ping(windrpc_response_msg_t *message, void *context) {
-    message->which_service = WINDRPC_SERVICE_RESPONSE_TAG(common);
-    message->service.common.which_result = WINDRPC_SERVICE_RESPONSE_RESULT_TAG(common, ping);
-    message->service.common.result.ping = WINDRPC_VERSION_CODE;
 }
 
 static struct windrpc_device_info *device_info = NULL;
 
-int32_t execute_get_device_info(struct windrpc_operation *operation, void *context) {
+int32_t execute_get_device_info(const rpc_types_Empty_t *req, rpc_common_DeviceInfo_t *res, void *context) {
     LOG_DBG("Execute: get_device_info");
-    return 0;
-}
-
-static bool encode_device_info_result(pb_ostream_t *stream, const pb_field_t *field, void *const *arg) {
-    WINDRPC_COMMON_DEVICE_INFO_TYPE *info =
-        (WINDRPC_COMMON_DEVICE_INFO_TYPE *)field->pData;
-    if (info == NULL) return false;
-
-    memset(info, 0, sizeof(*info));
-    strncpy(info->manufacturer_name, WINDRPC_MANUFACTURER_NAME, sizeof(info->manufacturer_name) - 1);
-    strncpy(info->model_number, WINDRPC_MODEL_NUMBER, sizeof(info->model_number) - 1);
-    strncpy(info->hw_revision, WINDRPC_HW_REVISION, sizeof(info->hw_revision) - 1);
-    strncpy(info->fw_revision, WINDRPC_FW_REVISION, sizeof(info->fw_revision) - 1);
+    if (res == NULL) return -1;
+    memset(res, 0, sizeof(*res));
+    strncpy(res->manufacturer_name, WINDRPC_MANUFACTURER_NAME, sizeof(res->manufacturer_name) - 1);
+    strncpy(res->model_number, WINDRPC_MODEL_NUMBER, sizeof(res->model_number) - 1);
+    strncpy(res->hw_revision, WINDRPC_HW_REVISION, sizeof(res->hw_revision) - 1);
+    strncpy(res->fw_revision, WINDRPC_FW_REVISION, sizeof(res->fw_revision) - 1);
 
     const char *serial = (device_info && device_info->serial_number)
                          ? device_info->serial_number : "unknown";
-    strncpy(info->serial_number, serial, sizeof(info->serial_number) - 1);
-
-    return true;
-}
-
-void encode_get_device_info(windrpc_response_msg_t *message, void *context) {
-    message->which_service = WINDRPC_SERVICE_RESPONSE_TAG(common);
-    message->service.common.which_result = WINDRPC_SERVICE_RESPONSE_RESULT_TAG(common, get_device_info);
-    message->service.common.cb_result.funcs.encode = encode_device_info_result;
-    message->service.common.cb_result.arg = NULL;
+    strncpy(res->serial_number, serial, sizeof(res->serial_number) - 1);
+    return 0;
 }
 
 // --WINDRPC_DISPATCH_TABLE
@@ -73,7 +55,16 @@ int32_t windrpc_handle(struct windrpc_transaction *txn) {
 
     if (status == 0) {
         if (ctx->handler != NULL && ctx->handler->execute != NULL) {
-            status = ctx->handler->execute(&txn->operation, ctx);
+            const void *req_ptr = windrpc_get_req_ptr(&txn->operation.client_msg.payload.request, ctx->rpc_idx);
+            void *res_ptr = windrpc_get_res_ptr(&txn->operation.server_msg.payload.response, ctx->rpc_idx);
+
+            if (ctx->handler->has_response) {
+                windrpc_set_response_result_tag(&txn->operation.server_msg.payload.response, ctx->rpc_idx, ctx->handler->res_tag);
+                status = ctx->handler->execute(req_ptr, res_ptr, ctx);
+            } else {
+                status = ctx->handler->execute(req_ptr, NULL, ctx);
+            }
+
             if (status != 0) {
                 LOG_WRN("Execution failed with application error: %d", status);
                 ctx->status_code = status;
@@ -119,48 +110,11 @@ int32_t windrpc_notify(struct windrpc_transaction *txn) {
 /*                           Decode Request(Command)                          */
 /* -------------------------------------------------------------------------- */
 
-static bool decode_request_id(pb_istream_t *stream, const pb_field_t *field, void **arg) {
-    struct windrpc_context *ctx = (struct windrpc_context *)*arg;
-    size_t len = stream->bytes_left;
-    if (len >= WINDRPC_REQUEST_ID_MAX_LEN) return false;
-    if (!pb_read(stream, ctx->request_id, len)) return false;
-    ctx->request_id_len = len;
-    ctx->request_id[len] = '\0';
-    return true;
-}
-
-static bool decode_payload(pb_istream_t *stream, const pb_field_t *field, void **arg) {
-    struct windrpc_context *ctx = (struct windrpc_context *)*arg;
-
-    if (field->tag == WINDRPC_CLIENT_REQUEST_TAG) {
-        LOG_DBG("Decoding 'request' submessage.");
-
-        windrpc_request_msg_t *req = (windrpc_request_msg_t *)field->pData;
-
-        if (WINDRPC_REQUEST_ID_TYPE) {
-            req->request_id.funcs.decode = decode_request_id;
-            req->request_id.arg = ctx;
-        }
-
-        if (!pb_decode(stream, WINDRPC_REQUEST_FIELDS, req)) {
-            LOG_ERR("Failed to decode Request sub-message: %s", PB_GET_ERROR(stream));
-            return false;
-        }
-
-        return true;
-    }
-
-    LOG_ERR("Unknown payload tag in ClientMessage: %d", (int)field->tag);
-    return false;
-}
-
 static int32_t decode_request(pb_istream_t *stream, struct windrpc_transaction *txn) {
     windrpc_client_msg_t *msg = &txn->operation.client_msg;
     struct windrpc_context *ctx = &txn->context;
 
     *msg = (windrpc_client_msg_t)WINDRPC_CLIENT_MESSAGE_INIT;
-    msg->cb_payload.funcs.decode = decode_payload;
-    msg->cb_payload.arg = ctx;
 
     if (!pb_decode(stream, WINDRPC_CLIENT_MESSAGE_FIELDS, msg)) {
         LOG_ERR("Failed to decode request stream: %s", PB_GET_ERROR(stream));
@@ -174,6 +128,15 @@ static int32_t decode_request(pb_istream_t *stream, struct windrpc_transaction *
     }
 
     windrpc_request_msg_t *req = &msg->payload.request;
+    ctx->request_id_len = (uint8_t)req->request_id.size;
+    if (ctx->request_id_len > 0) {
+        if (ctx->request_id_len >= WINDRPC_REQUEST_ID_MAX_LEN) {
+            ctx->request_id_len = WINDRPC_REQUEST_ID_MAX_LEN - 1;
+        }
+        memcpy(ctx->request_id, req->request_id.bytes, ctx->request_id_len);
+        ctx->request_id[ctx->request_id_len] = '\0';
+    }
+
     uint32_t service_tag = req->which_service;
     uint32_t command_tag = get_command_tag(req);
     windrpc_rpc_idx_t idx = windrpc_get_rpc_index(service_tag, command_tag);
@@ -185,6 +148,8 @@ static int32_t decode_request(pb_istream_t *stream, struct windrpc_transaction *
         return 0;
     }
 
+    ctx->rpc_idx = idx;
+    ctx->service_tag = service_tag;
     ctx->handler = &rpc_dispatch_table[idx];
     ctx->which_payload = ctx->handler->has_response ? WINDRPC_SERVER_RESPONSE_TAG : 0;
 
@@ -195,34 +160,16 @@ static int32_t decode_request(pb_istream_t *stream, struct windrpc_transaction *
 /*                           Encode Response(Result)                          */
 /* -------------------------------------------------------------------------- */
 
-static bool encode_request_id(pb_ostream_t *stream, const pb_field_t *field, void *const *arg) {
-    struct windrpc_context *ctx = (struct windrpc_context *)*arg;
-    if (!pb_encode_tag_for_field(stream, field)) return false;
-    return pb_encode_string(stream, (uint8_t *)ctx->request_id, ctx->request_id_len);
-}
-
-static bool encode_string(pb_ostream_t *stream, const pb_field_t *field, void *const *arg) {
-    const char *str = (const char *)(*arg);
-    if (str == NULL) {
-        str = "";
-    }
-    printf("[windrpc_encode_string]: %s\n", str);
-    if (!pb_encode_tag_for_field(stream, field)) return false;
-    return pb_encode_string(stream, (const uint8_t *)str, strlen(str));
-}
-
 static int32_t encode_response(pb_ostream_t *stream, struct windrpc_transaction *txn) {
     struct windrpc_context *ctx = &txn->context;
     windrpc_server_msg_t *msg = &txn->operation.server_msg;
 
-    *msg = (windrpc_server_msg_t)WINDRPC_SERVER_MESSAGE_INIT;
     msg->which_payload = WINDRPC_SERVER_RESPONSE_TAG;
     windrpc_response_msg_t *resp = &msg->payload.response;
 
-    if (WINDRPC_REQUEST_ID_TYPE) {
-        LOG_DBG("Encoding response for request_id: %s", ctx->request_id);
-        resp->request_id.funcs.encode = encode_request_id;
-        resp->request_id.arg = ctx;
+    if (ctx->request_id_len > 0) {
+        resp->request_id.size = ctx->request_id_len;
+        memcpy(resp->request_id.bytes, ctx->request_id, ctx->request_id_len);
     }
 
     if (ctx->status_code != 0) {
@@ -230,11 +177,10 @@ static int32_t encode_response(pb_ostream_t *stream, struct windrpc_transaction 
         resp->which_service = WINDRPC_SERVICE_RESPONSE_TAG(status);
         resp->service.status.code = ctx->status_code;
         if (ctx->status_message[0] != '\0') {
-            resp->service.status.message.funcs.encode = encode_string;
-            resp->service.status.message.arg = ctx->status_message;
+            strncpy((char *)resp->service.status.message, ctx->status_message, sizeof(resp->service.status.message) - 1);
         }
-    } else if (ctx->handler != NULL && ctx->handler->encode_res != NULL) {
-        ctx->handler->encode_res(resp, ctx);
+    } else if (ctx->handler != NULL && ctx->handler->has_response) {
+        resp->which_service = ctx->service_tag;
     } else {
         LOG_ERR("Missing encode_res function for a method that requires a response.");
         return -1;

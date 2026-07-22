@@ -9,17 +9,21 @@
 static uint8_t shared_buffer[BUFFER_SIZE];
 static uint8_t shared_tx_buffer[BUFFER_SIZE];
 
-#define CORE_TYPE(t) WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_core_, t)
-#define CORE_FIELDS(t) WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_core_, t, _fields)
-#define CORE_INIT(t) WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_core_, t, _init_zero)
-#define CORE_TAG(t) WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_core_, t, _tag)
+#define CORE_TYPE(t) WINDRPC_CAT3(WINDRPC_PACKAGE_NAME, _windrpc_core_, t)
+#define CORE_FIELDS(t) WINDRPC_CAT4(WINDRPC_PACKAGE_NAME, _windrpc_core_, t, _fields)
+#define CORE_INIT(t) WINDRPC_CAT4(WINDRPC_PACKAGE_NAME, _windrpc_core_, t, _init_zero)
+#define CORE_TAG(t) WINDRPC_CAT4(WINDRPC_PACKAGE_NAME, _windrpc_core_, t, _tag)
 
-#define SVC_TYPE(svc, t) WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_service_, svc, _, t)
-#define SVC_FIELDS(svc, t) WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_service_, svc, _, t, _fields)
-#define SVC_INIT(svc, t) WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_service_, svc, _, t, _init_zero)
-#define SVC_TAG(svc, t) WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_service_, svc, _, t, _tag)
+#define SVC_TYPE(svc, t) WINDRPC_CAT5(WINDRPC_PACKAGE_NAME, _windrpc_service_, svc, _, t)
+#define SVC_FIELDS(svc, t) WINDRPC_CAT6(WINDRPC_PACKAGE_NAME, _windrpc_service_, svc, _, t, _fields)
+#define SVC_INIT(svc, t) WINDRPC_CAT6(WINDRPC_PACKAGE_NAME, _windrpc_service_, svc, _, t, _init_zero)
+#define SVC_TAG(svc, t) WINDRPC_CAT6(WINDRPC_PACKAGE_NAME, _windrpc_service_, svc, _, t, _tag)
 
-#define TYPES_FIELDS(t) WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_types_, t, _fields)
+#define TYPES_FIELDS(t) WINDRPC_CAT4(WINDRPC_PACKAGE_NAME, _windrpc_types_, t, _fields)
+
+#define SET_REQUEST_ID(req, str) do { \
+    (req)->request_id.size = (pb_size_t)snprintf((char *)(req)->request_id.bytes, sizeof((req)->request_id.bytes), "%s", (str)); \
+} while(0)
 
 // Mock 서비스 실행 상태 저장용 전역 변수
 static struct {
@@ -40,56 +44,26 @@ static struct {
 /* -------------------------------------------------------------------------- */
 /*                                LED 서비스 모의 구현                        */
 /* -------------------------------------------------------------------------- */
-static bool decode_display_pixels(pb_istream_t *stream, const pb_field_t *field, void **arg) {
-    SVC_TYPE(led, PixelData) msg = SVC_INIT(led, PixelData);
-
-    if (!pb_decode(stream, SVC_FIELDS(led, PixelData), &msg)) {
-        return false;
-    }
-    mock_state.last_colors_count = msg.colors_count;
-    for (pb_size_t i = 0; i < msg.colors_count && i < 10; ++i) {
-        mock_state.last_colors[i] = msg.colors[i];
-    }
-    return true;
-}
-
-int32_t execute_display_pixels(struct windrpc_operation *operation, void *context) {
+int32_t execute_display_pixels(const SVC_TYPE(led, PixelData) *req, void *context) {
     mock_state.display_pixels_called++;
-    SVC_TYPE(led, PixelData) *pixels =
-        &operation->client_msg.payload.request.service.led.command.display_pixels;
-    mock_state.last_colors_count = pixels->colors_count;
-    for (pb_size_t i = 0; i < pixels->colors_count && i < 10; ++i) {
-        mock_state.last_colors[i] = pixels->colors[i];
+    mock_state.last_colors_count = req->colors_count;
+    for (pb_size_t i = 0; i < req->colors_count && i < 10; ++i) {
+        mock_state.last_colors[i] = req->colors[i];
     }
     return 0;
 }
 
-int32_t execute_read_power_info(struct windrpc_operation *operation, void *context) {
+int32_t execute_read_power_info(const rpc_types_Empty_t *req, SVC_TYPE(power, PowerInfo) *res, void *context) {
     mock_state.read_power_info_called++;
+    if (res != NULL) {
+        res->voltage_mill = 12000;
+        res->ampere_mill = 500;
+    }
     return 0;
 }
 
-static bool encode_power_result(pb_ostream_t *stream, const pb_field_t *field, void *const *arg) {
-    SVC_TYPE(power, PowerInfo) *info = (SVC_TYPE(power, PowerInfo) *)field->pData;
-    info->voltage_mill = 12000;
-    info->ampere_mill = 500;
-    return true;
-}
-
-void encode_read_power_info(windrpc_response_msg_t *response, void *context) {
-    response->which_service = WINDRPC_SERVICE_RESPONSE_TAG(power);
-    response->service.power.which_result = WINDRPC_SERVICE_RESPONSE_RESULT_TAG(power, read_power_info);
-    response->service.power.cb_result.funcs.encode = encode_power_result;
-    response->service.power.cb_result.arg = NULL;
-}
-
-int32_t execute_subscribe_power_notification(struct windrpc_operation *operation, void *context) {
+int32_t execute_subscribe_power_notification(const rpc_types_Subscribe_t *req, rpc_types_Empty_t *res, void *context) {
     return 0;
-}
-
-void encode_subscribe_power_notification(windrpc_response_msg_t *response, void *context) {
-    response->which_service = WINDRPC_SERVICE_RESPONSE_TAG(power);
-    response->service.power.which_result = WINDRPC_SERVICE_RESPONSE_RESULT_TAG(power, subscribe_power_notification);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -150,8 +124,7 @@ static void test_ping(void) {
     msg.which_payload = WINDRPC_CLIENT_REQUEST_TAG;
     CORE_TYPE(Request) *req = &msg.payload.request;
     
-    req->request_id.funcs.encode = encode_string_callback;
-    req->request_id.arg = "tx-ping-123";
+    SET_REQUEST_ID(req, "tx-ping-123");
 
     req->which_service = WINDRPC_SERVICE_REQUEST_TAG(common);
     req->service.common.which_command = WINDRPC_SERVICE_REQUEST_CMD_TAG(common, ping);
@@ -212,8 +185,7 @@ static void test_display_pixels(void) {
     msg.which_payload = WINDRPC_CLIENT_REQUEST_TAG;
     CORE_TYPE(Request) *req = &msg.payload.request;
 
-    req->request_id.funcs.encode = encode_string_callback;
-    req->request_id.arg = "tx-led-456";
+    SET_REQUEST_ID(req, "tx-led-456");
 
     req->which_service = WINDRPC_SERVICE_REQUEST_TAG(led);
     req->service.led.which_command = WINDRPC_SERVICE_REQUEST_CMD_TAG(led, display_pixels);
@@ -264,8 +236,7 @@ static void test_read_power_info(void) {
     msg.which_payload = WINDRPC_CLIENT_REQUEST_TAG;
     CORE_TYPE(Request) *req = &msg.payload.request;
 
-    req->request_id.funcs.encode = encode_string_callback;
-    req->request_id.arg = "tx-power-789";
+    SET_REQUEST_ID(req, "tx-power-789");
 
     req->which_service = WINDRPC_SERVICE_REQUEST_TAG(power);
     req->service.power.which_command = WINDRPC_SERVICE_REQUEST_CMD_TAG(power, read_power_info);
@@ -317,8 +288,7 @@ static void test_unimplemented_error(void) {
     msg.which_payload = WINDRPC_CLIENT_REQUEST_TAG;
     CORE_TYPE(Request) *req = &msg.payload.request;
 
-    req->request_id.funcs.encode = encode_string_callback;
-    req->request_id.arg = "tx-err-999";
+    SET_REQUEST_ID(req, "tx-err-999");
 
     req->which_service = 99; 
 
@@ -342,77 +312,18 @@ static void test_unimplemented_error(void) {
     printf("test_unimplemented_error PASSED!\n");
 }
 
-static bool decode_common_result(pb_istream_t *stream, const pb_field_t *field, void **arg) {
-    windrpc_response_msg_t *resp = (windrpc_response_msg_t *)*arg;
-    if (field->tag == WINDRPC_SERVICE_RESPONSE_RESULT_TAG(common, get_device_info)) {
-        resp->service.common.which_result = WINDRPC_SERVICE_RESPONSE_RESULT_TAG(common, get_device_info);
-        return pb_decode_noinit(stream, WINDRPC_COMMON_DEVICE_INFO_FIELDS, &resp->service.common.result.get_device_info);
-    }
-    return false;
-}
-
-static bool decode_power_result(pb_istream_t *stream, const pb_field_t *field, void **arg) {
-    windrpc_response_msg_t *resp = (windrpc_response_msg_t *)*arg;
-    if (field->tag == WINDRPC_SERVICE_RESPONSE_RESULT_TAG(power, read_power_info)) {
-        resp->service.power.which_result = WINDRPC_SERVICE_RESPONSE_RESULT_TAG(power, read_power_info);
-        return pb_decode_noinit(stream, SVC_FIELDS(power, PowerInfo), &resp->service.power.result.read_power_info);
-    }
-    return false;
-}
-
-static bool decode_service(pb_istream_t *stream, const pb_field_t *field, void **arg) {
-    windrpc_response_msg_t *resp = (windrpc_response_msg_t *)*arg;
-    resp->which_service = field->tag;
-
-    switch (field->tag) {
-        case WINDRPC_SERVICE_RESPONSE_TAG(status): {
-            resp->service.status.message.funcs.decode = decode_string_callback;
-            resp->service.status.message.arg = NULL;
-            return pb_decode_noinit(stream, WINDRPC_TYPES_FIELDS(Status), &resp->service.status);
-        }
-        case WINDRPC_SERVICE_RESPONSE_TAG(common): {
-            resp->service.common.cb_result.funcs.decode = decode_common_result;
-            resp->service.common.cb_result.arg = resp;
-            return pb_decode_noinit(stream, WINDRPC_SERVICE_RESPONSE_FIELDS(common), &resp->service.common);
-        }
-        case WINDRPC_SERVICE_RESPONSE_TAG(power): {
-            resp->service.power.cb_result.funcs.decode = decode_power_result;
-            resp->service.power.cb_result.arg = resp;
-            return pb_decode_noinit(stream, WINDRPC_SERVICE_RESPONSE_FIELDS(power), &resp->service.power);
-        }
-        default:
-            printf("Unknown service: %d\n", field->tag);
-            return false;
-    }
-}
-
-static bool decode_payload(pb_istream_t *stream, const pb_field_t *field, void **arg) {
-    if (field->tag == WINDRPC_SERVER_RESPONSE_TAG) {
-        windrpc_response_msg_t *resp = (windrpc_response_msg_t *)field->pData;
-        resp->request_id.funcs.decode = decode_string_callback;
-        resp->request_id.arg = decode_result.request_id;
-        resp->cb_service.funcs.decode = decode_service;
-        resp->cb_service.arg = resp;
-
-        return pb_decode_noinit(stream, WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_core_Response_fields), resp);
-    }
-    return false;
-}
-
 static bool decode_server_message_safely(struct windrpc_transaction *txn, windrpc_response_msg_t *out_resp) {
     pb_istream_t stream = pb_istream_from_buffer(txn->buffer.tx_data, txn->buffer.bytes_written);
-    
-    CORE_TYPE(ServerMessage) resp_msg = CORE_INIT(ServerMessage);
-    resp_msg.cb_payload.funcs.decode = decode_payload;
-    resp_msg.cb_payload.arg = NULL;
-    
     memset(&decode_result, 0, sizeof(decode_result));
-    
-    bool ok = pb_decode(&stream, WINDRPC_SERVER_MESSAGE_FIELDS, &resp_msg);
-    if (!ok) {
-        printf("[safely] pb_decode failed! Error: %s\n", PB_GET_ERROR(&stream));
+    bool ok = pb_decode(&stream, WINDRPC_SERVER_MESSAGE_FIELDS, &decode_result.server_msg);
+    if (ok) {
+        if (out_resp) *out_resp = decode_result.server_msg.payload.response;
+        size_t len = decode_result.server_msg.payload.response.request_id.size;
+        if (len >= sizeof(decode_result.request_id)) len = sizeof(decode_result.request_id) - 1;
+        memcpy(decode_result.request_id, decode_result.server_msg.payload.response.request_id.bytes, len);
+        decode_result.request_id[len] = '\0';
     } else {
-        decode_result.server_msg = resp_msg;
+        printf("[test] pb_decode failed: %s\n", PB_GET_ERROR(&stream));
     }
     return ok;
 }
@@ -438,8 +349,7 @@ static void test_get_device_info(void) {
     msg.which_payload = WINDRPC_CLIENT_REQUEST_TAG;
     CORE_TYPE(Request) *req = &msg.payload.request;
 
-    req->request_id.funcs.encode = encode_string_callback;
-    req->request_id.arg = "tx-devinfo-001";
+    SET_REQUEST_ID(req, "tx-devinfo-001");
 
     req->which_service = WINDRPC_SERVICE_REQUEST_TAG(common);
     req->service.common.which_command = WINDRPC_SERVICE_REQUEST_CMD_TAG(common, get_device_info);
