@@ -86,7 +86,7 @@ def generate_options_files(spec_data, output_dir, package_prefix, verbose=False)
                     _collect_options(field, svc_name, msg_def['name'])
 
     # --- 3. windrpc.proto 옵션 추가 ---
-    envelope_mode = config.get('envelope_mode', 'nested')
+    envelope_mode = config.get('envelope_mode', 'flat')
     if envelope_mode != 'flat':
         windrpc_package = f"{package_prefix}.windrpc.core"
         options_by_file['windrpc'].append(

@@ -322,7 +322,7 @@ def generate_service_proto(service_spec, spec_data, package_prefix):
             resolved_type_names.append(event_type)
             event_rpcs.append(f"    {event_type} {rpc_name} = {rpc_id};")
 
-    envelope_mode = spec_data.get('config', {}).get('envelope_mode', 'nested')
+    envelope_mode = spec_data.get('config', {}).get('envelope_mode', 'flat')
     if envelope_mode != 'flat':
         if command_rpcs:
             content.extend(["message Request {", "  oneof command {"])
@@ -376,7 +376,7 @@ def _format_rpc_doc_comment(svc_name, svc_id, rpc):
 def generate_windrpc_proto(spec_data, package_prefix):
 
     use_request_id = True
-    envelope_mode = spec_data.get('config', {}).get('envelope_mode', 'nested')
+    envelope_mode = spec_data.get('config', {}).get('envelope_mode', 'flat')
 
     content = [get_generated_file_header(), 'syntax = "proto3";\n',
                f'package {package_prefix}.windrpc.core;\n']

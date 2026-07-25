@@ -93,7 +93,7 @@ def validate(spec_data, verbose=False):
         validate_name(package_name, 'service', 'package name', None)
     config_spec = spec_data.get('config', {})
     if config_spec and isinstance(config_spec, dict):
-        envelope_mode = config_spec.get('envelope_mode', 'nested')
+        envelope_mode = config_spec.get('envelope_mode', 'flat')
         if envelope_mode not in ('nested', 'flat'):
             errors.append(ValidationError(
                 f"Invalid envelope_mode '{envelope_mode}'. Must be 'nested' or 'flat'.",

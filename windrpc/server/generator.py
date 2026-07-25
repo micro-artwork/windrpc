@@ -701,7 +701,7 @@ def _generate_callbacks_skeleton(spec_data, package_name):
 
 def _generate_notify_skeleton(spec_data, package_name):
     prefix = package_name.replace('/', '_').replace('-', '_')
-    envelope_mode = spec_data.get('config', {}).get('envelope_mode', 'nested')
+    envelope_mode = spec_data.get('config', {}).get('envelope_mode', 'flat')
     services = spec_data.get('services', [])
 
     content = []
@@ -949,7 +949,7 @@ def generate(core_spec_path, user_spec_path, output_dir, mode=None, rtos="zephyr
 
     # copy / update windrpc_config.h
     file_path = os.path.join(output_dir, 'windrpc_config.h')
-    envelope_mode = spec_data.get('config', {}).get('envelope_mode', 'nested')
+    envelope_mode = spec_data.get('config', {}).get('envelope_mode', 'flat')
     mode_macro_val = "WINDRPC_ENVELOPE_FLAT" if envelope_mode == 'flat' else "WINDRPC_ENVELOPE_NESTED"
 
     source_path = _get_template_file_path('windrpc_config.h')

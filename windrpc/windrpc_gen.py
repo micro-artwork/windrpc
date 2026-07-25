@@ -92,7 +92,7 @@ def main():
     proto_parser.add_argument(
         '-o', '--output', default='protos', help='Output directory for generated files.')
     proto_parser.add_argument(
-        '-m', '--mode', choices=['nested', 'flat'], default=None, help='Envelope mode: nested (default) or flat.')
+        '-m', '--mode', choices=['nested', 'flat'], default=None, help='Envelope mode: flat (default) or nested.')
     proto_parser.add_argument(
         '-v', '--verbose', action='store_true', help='Enable verbose output.')
     proto_parser.set_defaults(func=handle_proto_command)
@@ -107,7 +107,7 @@ def main():
     server_parser.add_argument(
         '-o', '--output', default='server', help='Output directory for generated files.')
     server_parser.add_argument(
-        '-m', '--mode', choices=['nested', 'flat'], default=None, help='Envelope mode: nested (default) or flat.')
+        '-m', '--mode', choices=['nested', 'flat'], default=None, help='Envelope mode: flat (default) or nested.')
     server_parser.add_argument(
         '-r', '--rtos', choices=['zephyr', 'freertos', 'none'], default='zephyr', help='Target RTOS (default: zephyr).')
     server_parser.add_argument(

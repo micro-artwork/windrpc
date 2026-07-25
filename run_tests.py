@@ -56,13 +56,13 @@ def main():
         yaml.dump(spec_data, f, sort_keys=False)
     print(f"  - Applied random package name for unit test: '{random_package}'")
     
-    # 2.1 proto 생성
-    gen_proto_cmd = [sys.executable, "windrpc/windrpc_gen.py", "proto", "-s", spec_path, "-o", gen_dir]
-    if not run_step("Generating Proto Files", gen_proto_cmd, cwd=root_dir):
+    # 2.1 proto 생성 (Nested Mode)
+    gen_proto_cmd = [sys.executable, "windrpc/windrpc_gen.py", "proto", "-s", spec_path, "-o", gen_dir, "-m", "nested"]
+    if not run_step("Generating Proto Files (Nested)", gen_proto_cmd, cwd=root_dir):
         sys.exit(1)
         
     # 2.2 server c 코드 생성 (Nested Mode)
-    gen_server_cmd = [sys.executable, "windrpc/windrpc_gen.py", "server", "-s", spec_path, "-o", gen_dir]
+    gen_server_cmd = [sys.executable, "windrpc/windrpc_gen.py", "server", "-s", spec_path, "-o", gen_dir, "-m", "nested"]
     if not run_step("Generating C Server Code (Nested)", gen_server_cmd, cwd=root_dir):
         sys.exit(1)
 
