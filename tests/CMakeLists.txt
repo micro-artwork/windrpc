@@ -14,7 +14,12 @@ include_directories(${NANOPB_INCLUDE_DIRS})
 include(${FETCHCONTENT_BASE_DIR}/nanopb-src/extra/FindNanopb.cmake)
 
 # 생성된 코드들의 인클루드 경로 및 Nanopb 동적 생성 설정
-set(GEN_DIR ${CMAKE_CURRENT_SOURCE_DIR}/generated)
+if(USE_FLAT_MODE)
+    set(GEN_DIR ${CMAKE_CURRENT_SOURCE_DIR}/generated_flat)
+else()
+    set(GEN_DIR ${CMAKE_CURRENT_SOURCE_DIR}/generated)
+endif()
+
 include_directories(${GEN_DIR})
 
 # 패키지 서브디렉토리를 인클루드 경로로 동적 추가
@@ -32,9 +37,16 @@ file(GLOB_RECURSE PROTO_FILES "${GEN_DIR}/*.proto")
 nanopb_generate_cpp(TARGET test_protos RELPATH ${GEN_DIR} ${PROTO_FILES})
 
 # 테스트 바이너리 생성
-add_executable(run_tests 
-        test_c_rpc.c 
-        ${GEN_DIR}/windrpc.c
-)
+if(USE_FLAT_MODE)
+    add_executable(run_tests 
+            test_c_rpc_flat.c 
+            ${GEN_DIR}/windrpc.c
+    )
+else()
+    add_executable(run_tests 
+            test_c_rpc.c 
+            ${GEN_DIR}/windrpc.c
+    )
+endif()
 
 target_link_libraries(run_tests test_protos)

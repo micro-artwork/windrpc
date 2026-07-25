@@ -86,11 +86,13 @@ def generate_options_files(spec_data, output_dir, package_prefix, verbose=False)
                     _collect_options(field, svc_name, msg_def['name'])
 
     # --- 3. windrpc.proto 옵션 추가 ---
-    windrpc_package = f"{package_prefix}.windrpc.core"
-    options_by_file['windrpc'].append(
-        f"{windrpc_package}.Request.request_id max_size: 38")
-    options_by_file['windrpc'].append(
-        f"{windrpc_package}.Response.request_id max_size: 38")
+    envelope_mode = config.get('envelope_mode', 'nested')
+    if envelope_mode != 'flat':
+        windrpc_package = f"{package_prefix}.windrpc.core"
+        options_by_file['windrpc'].append(
+            f"{windrpc_package}.Request.request_id max_size: 38")
+        options_by_file['windrpc'].append(
+            f"{windrpc_package}.Response.request_id max_size: 38")
 
     # --- 4. 파일 쓰기 ---
     for file_key, options_list in options_by_file.items():

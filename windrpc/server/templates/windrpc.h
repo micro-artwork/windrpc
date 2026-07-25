@@ -3,8 +3,6 @@
 
 #include "windrpc_common.h"
 
-// --WINDRPC_TYPEDEF_ALIASES
-
 struct windrpc_device_info {
     char *serial_number;
 };
@@ -18,10 +16,12 @@ struct windrpc_buffer {
     uint16_t tx_size;  // separate tx data size
 };
 
+#if WINDRPC_ENVELOPE_MODE != WINDRPC_ENVELOPE_FLAT
 struct windrpc_operation {
     windrpc_server_msg_t server_msg;
     windrpc_client_msg_t client_msg;
 };
+#endif
 
 struct windrpc_context {
     // request id
@@ -41,11 +41,23 @@ struct windrpc_context {
 struct windrpc_transaction {
     struct windrpc_buffer buffer;
     struct windrpc_context context;
+#if WINDRPC_ENVELOPE_MODE != WINDRPC_ENVELOPE_FLAT
     struct windrpc_operation operation;
+#endif
 };
 
 int32_t windrpc_init(struct windrpc_device_info *device_info);
 int32_t windrpc_handle(struct windrpc_transaction *txn);
 int32_t windrpc_notify(struct windrpc_transaction *txn);
+
+/* -------------------------------------------------------------------------- */
+/*                      WindRPC Type Aliases (Shortcuts)                      */
+/* -------------------------------------------------------------------------- */
+// --WINDRPC_TYPEDEF_ALIASES
+
+/* -------------------------------------------------------------------------- */
+/*                      Notification Function Declarations                    */
+/* -------------------------------------------------------------------------- */
+// --WINDRPC_NOTIFY_DECLARATIONS
 
 #endif  // WINDRPC_H

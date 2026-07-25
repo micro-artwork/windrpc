@@ -91,6 +91,15 @@ def validate(spec_data, verbose=False):
     package_name = spec_data.get('package')
     if package_name:
         validate_name(package_name, 'service', 'package name', None)
+    config_spec = spec_data.get('config', {})
+    if config_spec and isinstance(config_spec, dict):
+        envelope_mode = config_spec.get('envelope_mode', 'nested')
+        if envelope_mode not in ('nested', 'flat'):
+            errors.append(ValidationError(
+                f"Invalid envelope_mode '{envelope_mode}'. Must be 'nested' or 'flat'.",
+                'config.envelope_mode',
+                getattr(config_spec, '__line__', None)
+            ))
     types_spec = spec_data.get('types', {})
     services = spec_data.get('services') or []
     VALID_RPC_TYPES = {'REQUEST_ONLY', 'REQUEST_RESPONSE', 'NOTIFICATION'}

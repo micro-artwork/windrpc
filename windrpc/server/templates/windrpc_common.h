@@ -24,6 +24,9 @@
 /*                              Logging Fallbacks                             */
 /* -------------------------------------------------------------------------- */
 
+#ifdef __ZEPHYR__
+#include <zephyr/logging/log.h>
+#else
 #ifndef LOG_MODULE_REGISTER
 #define LOG_MODULE_REGISTER(name, level)
 #endif
@@ -42,6 +45,7 @@
 
 #ifndef LOG_ERR
 #define LOG_ERR(...)
+#endif
 #endif
 
 /* -------------------------------------------------------------------------- */
@@ -69,6 +73,20 @@
 #define WINDRPC_VERSION_CODE \
     WINDRPC_CAT3(WINDRPC_PACKAGE_NAME, _windrpc_types_PlatformVersionCode_, PLATFORM_VERSION_CODE)
 
+#define WINDRPC_COMMON_DEVICE_INFO_TYPE \
+    WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_service_common_DeviceInfo)
+
+#define WINDRPC_COMMON_DEVICE_INFO_FIELDS \
+    WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_service_common_DeviceInfo_fields)
+
+#define WINDRPC_SERVICE_MSG_FIELDS(service_name, message_name) \
+    WINDRPC_CAT6(WINDRPC_PACKAGE_NAME, _windrpc_service_, service_name, _, message_name, _fields)
+
+#define WINDRPC_TYPES_MSG_FIELDS(message_name) \
+    WINDRPC_CAT4(WINDRPC_PACKAGE_NAME, _windrpc_types_, message_name, _fields)
+
+#if WINDRPC_ENVELOPE_MODE != WINDRPC_ENVELOPE_FLAT
+
 #define WINDRPC_CLIENT_MESSAGE_INIT \
     WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_core_ClientMessage_init_default)
 
@@ -86,12 +104,6 @@
 
 #define WINDRPC_RESPONSE_FIELDS \
     WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_core_Response_fields)
-
-#define WINDRPC_COMMON_DEVICE_INFO_TYPE \
-    WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_service_common_DeviceInfo)
-
-#define WINDRPC_COMMON_DEVICE_INFO_FIELDS \
-    WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_service_common_DeviceInfo_fields)
 
 /* -------------------------------------------------------------------------- */
 /*                                Service Tags                                */
@@ -134,6 +146,8 @@ typedef WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_core_Request) windrpc_request
 typedef WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_core_Response) windrpc_response_msg_t;
 typedef WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_core_Notification) windrpc_notif_msg_t;
 
+#endif /* WINDRPC_ENVELOPE_MODE != WINDRPC_ENVELOPE_FLAT */
+
 #define WINDRPC_TYPES_TYPE(message_name) \
     WINDRPC_CAT3(WINDRPC_PACKAGE_NAME, _windrpc_types_, message_name)
 
@@ -143,21 +157,25 @@ typedef WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_core_Notification) windrpc_no
 #define WINDRPC_SERVICE_RESPONSE_TYPE(service_name) \
     WINDRPC_CAT4(WINDRPC_PACKAGE_NAME, _windrpc_service_, service_name, _Response)
 
-#define WINDRPC_SERVICE_MSG_FIELDS(service_name, message_name) \
-    WINDRPC_CAT6(WINDRPC_PACKAGE_NAME, _windrpc_service_, service_name, _, message_name, _fields)
-
-#define WINDRPC_TYPES_MSG_FIELDS(message_name) \
-    WINDRPC_CAT4(WINDRPC_PACKAGE_NAME, _windrpc_types_, message_name, _fields)
-
 /* -------------------------------------------------------------------------- */
 /*                               Dispatch Table                               */
 /* -------------------------------------------------------------------------- */
 
+#if WINDRPC_ENVELOPE_MODE == WINDRPC_ENVELOPE_FLAT
+struct windrpc_handler_entry {
+    uint16_t rpc_id;
+    int32_t (*execute)(const void *req, void *res, void *context);
+    bool has_response;
+    const pb_msgdesc_t *req_fields;
+    const pb_msgdesc_t *res_fields;
+};
+#else
 struct windrpc_handler_entry {
     int32_t (*execute)(const void *req, void *res, void *context);
     bool has_response;
     uint32_t res_tag;
 };
+#endif
 
 // --WINDRPC_RPC_INDEX_ENUM
 

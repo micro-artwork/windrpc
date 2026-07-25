@@ -1,21 +1,27 @@
 #include "windrpc.h"
+
 #include <stdio.h>
 #include <string.h>
 
-LOG_MODULE_REGISTER(WINDRPC, WINDRPC_LOG_LEVEL);
+LOG_MODULE_REGISTER(windrpc, WINDRPC_LOG_LEVEL);
 
-static int32_t decode_request(pb_istream_t *stream, struct windrpc_transaction *txn);
-static int32_t encode_response(pb_ostream_t *stream, struct windrpc_transaction *txn);
+static struct windrpc_device_info* device_info = NULL;
 
-int32_t execute_ping(const rpc_types_Empty_t *req, uint32_t *res, void *context) {
+int32_t windrpc_init(struct windrpc_device_info* info) {
+    device_info = info;
+    LOG_INF("windrpc framework initialized.");
+    return 0;
+}
+
+int32_t execute_ping(const void* req, uint32_t* res, void* context) {
+    ARG_UNUSED(req);
     LOG_DBG("Execute: ping");
     if (res) *res = WINDRPC_VERSION_CODE;
     return 0;
 }
 
-static struct windrpc_device_info *device_info = NULL;
-
-int32_t execute_get_device_info(const rpc_types_Empty_t *req, rpc_common_DeviceInfo_t *res, void *context) {
+int32_t execute_get_device_info(const void* req, rpc_common_DeviceInfo_t* res, void* context) {
+    ARG_UNUSED(req);
     LOG_DBG("Execute: get_device_info");
     if (res == NULL) return -1;
     memset(res, 0, sizeof(*res));
@@ -24,25 +30,110 @@ int32_t execute_get_device_info(const rpc_types_Empty_t *req, rpc_common_DeviceI
     strncpy(res->hw_revision, WINDRPC_HW_REVISION, sizeof(res->hw_revision) - 1);
     strncpy(res->fw_revision, WINDRPC_FW_REVISION, sizeof(res->fw_revision) - 1);
 
-    const char *serial = (device_info && device_info->serial_number)
-                         ? device_info->serial_number : "unknown";
+    const char* serial = (device_info && device_info->serial_number)
+                             ? device_info->serial_number
+                             : "unknown";
     strncpy(res->serial_number, serial, sizeof(res->serial_number) - 1);
     return 0;
 }
+
+#if WINDRPC_ENVELOPE_MODE == WINDRPC_ENVELOPE_FLAT
+
+// --WINDRPC_FLAT_DISPATCH_TABLE
+
+int32_t windrpc_handle(struct windrpc_transaction* txn) {
+    struct windrpc_buffer* buffer = &txn->buffer;
+    struct windrpc_context* ctx = &txn->context;
+
+    LOG_DBG("Handling new Flat RPC request. Size: %u bytes", buffer->bytes_written);
+
+    memset(ctx, 0, sizeof(struct windrpc_context));
+
+    if (buffer->bytes_written < 5) {
+        LOG_ERR("Packet size too small (%u bytes)", buffer->bytes_written);
+        ctx->status_code = (int32_t)WINDRPC_STATUS_CODE(INVALID_DATA_FORMAT);
+        return -1;
+    }
+
+    uint8_t* rx_data = buffer->data;
+    uint16_t rpc_id = (uint16_t)((rx_data[0] << 8) | rx_data[1]);
+    uint16_t seq_id = (uint16_t)((rx_data[2] << 8) | rx_data[3]);
+    uint8_t payload_len = rx_data[4];
+
+    snprintf((char*)ctx->request_id, WINDRPC_REQUEST_ID_MAX_LEN, "%u", seq_id);
+    ctx->request_id_len = (uint8_t)strlen((char*)ctx->request_id);
+
+    const struct windrpc_handler_entry* handler = windrpc_find_flat_handler(rpc_id);
+    if (!handler) {
+        LOG_ERR("Unknown RPC ID: 0x%04X", rpc_id);
+        ctx->status_code = (int32_t)WINDRPC_STATUS_CODE(UNIMPLEMENTED);
+        snprintf(ctx->status_message, WINDRPC_STATUS_MESSAGE_MAX_LEN, "RPC ID 0x%04X not found", rpc_id);
+        return -1;
+    }
+
+    ctx->handler = handler;
+
+    pb_istream_t istream = pb_istream_from_buffer(&rx_data[5], payload_len);
+    void* req_ptr = windrpc_get_flat_req_struct(rpc_id);
+
+    if (handler->req_fields && req_ptr) {
+        if (!pb_decode(&istream, handler->req_fields, req_ptr)) {
+            LOG_ERR("Failed to decode payload for RPC ID 0x%04X: %s", rpc_id, PB_GET_ERROR(&istream));
+            ctx->status_code = (int32_t)WINDRPC_STATUS_CODE(INVALID_DATA_FORMAT);
+            return -1;
+        }
+    }
+
+    void* res_ptr = windrpc_get_flat_res_struct(rpc_id);
+    int32_t status = handler->execute(req_ptr, res_ptr, ctx);
+    if (status != 0) {
+        LOG_WRN("Execution failed with application error: %d", status);
+        ctx->status_code = status;
+    }
+
+    if (handler->has_response) {
+        uint8_t* tx_data = buffer->tx_data;
+        if (buffer->tx_size < 5) {
+            LOG_ERR("TX buffer size too small");
+            return -1;
+        }
+
+        tx_data[0] = (uint8_t)((rpc_id >> 8) & 0xFF);
+        tx_data[1] = (uint8_t)(rpc_id & 0xFF);
+        tx_data[2] = (uint8_t)((seq_id >> 8) & 0xFF);
+        tx_data[3] = (uint8_t)(seq_id & 0xFF);
+
+        pb_ostream_t ostream = pb_ostream_from_buffer(&tx_data[5], buffer->tx_size - 5);
+        if (handler->res_fields && res_ptr) {
+            if (!pb_encode(&ostream, handler->res_fields, res_ptr)) {
+                LOG_ERR("Failed to encode response for RPC ID 0x%04X", rpc_id);
+                buffer->bytes_written = 0;
+                return -1;
+            }
+        }
+
+        tx_data[4] = (uint8_t)ostream.bytes_written;
+        buffer->bytes_written = 5 + (uint16_t)ostream.bytes_written;
+        LOG_DBG("Encoded Flat response. Total Size: %u bytes", buffer->bytes_written);
+    } else {
+        buffer->bytes_written = 0;
+    }
+
+    return 0;
+}
+
+#else  // WINDRPC_ENVELOPE_MODE == WINDRPC_ENVELOPE_NESTED
+
+static int32_t decode_request(pb_istream_t* stream, struct windrpc_transaction* txn);
+static int32_t encode_response(pb_ostream_t* stream, struct windrpc_transaction* txn);
 
 // --WINDRPC_DISPATCH_TABLE
 
 // --WINDRPC_GET_COMMAND_TAG_AND_INDEX_FUNCS
 
-int32_t windrpc_init(struct windrpc_device_info *info) {
-    device_info = info;
-    LOG_INF("windrpc framework initialized.");
-    return 0;
-}
-
-int32_t windrpc_handle(struct windrpc_transaction *txn) {
-    struct windrpc_buffer *buffer = &txn->buffer;
-    struct windrpc_context *ctx = &txn->context;
+int32_t windrpc_handle(struct windrpc_transaction* txn) {
+    struct windrpc_buffer* buffer = &txn->buffer;
+    struct windrpc_context* ctx = &txn->context;
 
     LOG_DBG("Handling new RPC request. Size: %u bytes", buffer->bytes_written);
 
@@ -55,8 +146,8 @@ int32_t windrpc_handle(struct windrpc_transaction *txn) {
 
     if (status == 0) {
         if (ctx->handler != NULL && ctx->handler->execute != NULL) {
-            const void *req_ptr = windrpc_get_req_ptr(&txn->operation.client_msg.payload.request, ctx->rpc_idx);
-            void *res_ptr = windrpc_get_res_ptr(&txn->operation.server_msg.payload.response, ctx->rpc_idx);
+            const void* req_ptr = windrpc_get_req_ptr(&txn->operation.client_msg.payload.request, ctx->rpc_idx);
+            void* res_ptr = windrpc_get_res_ptr(&txn->operation.server_msg.payload.response, ctx->rpc_idx);
 
             if (ctx->handler->has_response) {
                 windrpc_set_response_result_tag(&txn->operation.server_msg.payload.response, ctx->rpc_idx, ctx->handler->res_tag);
@@ -94,9 +185,9 @@ int32_t windrpc_handle(struct windrpc_transaction *txn) {
     return 0;
 }
 
-int32_t windrpc_notify(struct windrpc_transaction *txn) {
-    struct windrpc_buffer *buffer = &txn->buffer;
-    windrpc_server_msg_t *msg = &txn->operation.server_msg;
+int32_t windrpc_notify(struct windrpc_transaction* txn) {
+    struct windrpc_buffer* buffer = &txn->buffer;
+    windrpc_server_msg_t* msg = &txn->operation.server_msg;
     msg->which_payload = WINDRPC_SERVER_NOTIFICAION_TAG;
     pb_ostream_t ostream = pb_ostream_from_buffer(buffer->tx_data, buffer->tx_size);
     if (!pb_encode(&ostream, WINDRPC_SERVER_MESSAGE_FIELDS, msg)) {
@@ -110,9 +201,9 @@ int32_t windrpc_notify(struct windrpc_transaction *txn) {
 /*                           Decode Request(Command)                          */
 /* -------------------------------------------------------------------------- */
 
-static int32_t decode_request(pb_istream_t *stream, struct windrpc_transaction *txn) {
-    windrpc_client_msg_t *msg = &txn->operation.client_msg;
-    struct windrpc_context *ctx = &txn->context;
+static int32_t decode_request(pb_istream_t* stream, struct windrpc_transaction* txn) {
+    windrpc_client_msg_t* msg = &txn->operation.client_msg;
+    struct windrpc_context* ctx = &txn->context;
 
     *msg = (windrpc_client_msg_t)WINDRPC_CLIENT_MESSAGE_INIT;
 
@@ -127,7 +218,7 @@ static int32_t decode_request(pb_istream_t *stream, struct windrpc_transaction *
         return -1;
     }
 
-    windrpc_request_msg_t *req = &msg->payload.request;
+    windrpc_request_msg_t* req = &msg->payload.request;
     ctx->request_id_len = (uint8_t)req->request_id.size;
     if (ctx->request_id_len > 0) {
         if (ctx->request_id_len >= WINDRPC_REQUEST_ID_MAX_LEN) {
@@ -160,12 +251,12 @@ static int32_t decode_request(pb_istream_t *stream, struct windrpc_transaction *
 /*                           Encode Response(Result)                          */
 /* -------------------------------------------------------------------------- */
 
-static int32_t encode_response(pb_ostream_t *stream, struct windrpc_transaction *txn) {
-    struct windrpc_context *ctx = &txn->context;
-    windrpc_server_msg_t *msg = &txn->operation.server_msg;
+static int32_t encode_response(pb_ostream_t* stream, struct windrpc_transaction* txn) {
+    struct windrpc_context* ctx = &txn->context;
+    windrpc_server_msg_t* msg = &txn->operation.server_msg;
 
     msg->which_payload = WINDRPC_SERVER_RESPONSE_TAG;
-    windrpc_response_msg_t *resp = &msg->payload.response;
+    windrpc_response_msg_t* resp = &msg->payload.response;
 
     if (ctx->request_id_len > 0) {
         resp->request_id.size = ctx->request_id_len;
@@ -177,7 +268,7 @@ static int32_t encode_response(pb_ostream_t *stream, struct windrpc_transaction 
         resp->which_service = WINDRPC_SERVICE_RESPONSE_TAG(status);
         resp->service.status.code = ctx->status_code;
         if (ctx->status_message[0] != '\0') {
-            strncpy((char *)resp->service.status.message, ctx->status_message, sizeof(resp->service.status.message) - 1);
+            strncpy((char*)resp->service.status.message, ctx->status_message, sizeof(resp->service.status.message) - 1);
         }
     } else if (ctx->handler != NULL && ctx->handler->has_response) {
         resp->which_service = ctx->service_tag;
@@ -193,3 +284,5 @@ static int32_t encode_response(pb_ostream_t *stream, struct windrpc_transaction 
 
     return 0;
 }
+
+#endif  // WINDRPC_ENVELOPE_MODE

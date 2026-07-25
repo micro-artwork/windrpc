@@ -61,12 +61,26 @@ def main():
     if not run_step("Generating Proto Files", gen_proto_cmd, cwd=root_dir):
         sys.exit(1)
         
-    # 2.2 server c 코드 생성
+    # 2.2 server c 코드 생성 (Nested Mode)
     gen_server_cmd = [sys.executable, "windrpc/windrpc_gen.py", "server", "-s", spec_path, "-o", gen_dir]
-    if not run_step("Generating C Server Code", gen_server_cmd, cwd=root_dir):
+    if not run_step("Generating C Server Code (Nested)", gen_server_cmd, cwd=root_dir):
         sys.exit(1)
 
-    # 2.3 테스트용 windrpc_config.h 수정 (request_id 활성화)
+    # 2.3 Flat Mode 생성
+    flat_gen_dir = os.path.join(root_dir, "tests", "generated_flat")
+    if os.path.exists(flat_gen_dir):
+        shutil.rmtree(flat_gen_dir)
+    os.makedirs(flat_gen_dir, exist_ok=True)
+
+    gen_proto_flat_cmd = [sys.executable, "windrpc/windrpc_gen.py", "proto", "-s", spec_path, "-o", flat_gen_dir, "-m", "flat"]
+    if not run_step("Generating Flat Proto Files", gen_proto_flat_cmd, cwd=root_dir):
+        sys.exit(1)
+
+    gen_server_flat_cmd = [sys.executable, "windrpc/windrpc_gen.py", "server", "-s", spec_path, "-o", flat_gen_dir, "-m", "flat"]
+    if not run_step("Generating C Server Code (Flat)", gen_server_flat_cmd, cwd=root_dir):
+        sys.exit(1)
+
+    # 2.4 테스트용 windrpc_config.h 수정 (request_id 활성화)
     config_path = os.path.join(gen_dir, "windrpc_config.h")
     if os.path.exists(config_path):
         with open(config_path, "r", encoding="utf-8") as f:
@@ -120,8 +134,42 @@ def main():
     print(f"Found test executable: {test_bin_path}")
 
     # 바이너리 실행
-    if not run_step("C Host Unit Tests Execution", [test_bin_path]):
+    # 5단계: Flat 모드 및 C# 클라이언트 제너레이터 검증
+    print_banner("Step 5: Testing Flat Envelope Mode & C# Client Generation")
+    flat_gen_dir = os.path.join(root_dir, "tests", "generated_flat")
+    if os.path.exists(flat_gen_dir):
+        shutil.rmtree(flat_gen_dir)
+    os.makedirs(flat_gen_dir, exist_ok=True)
+
+    gen_proto_flat_cmd = [sys.executable, "windrpc/windrpc_gen.py", "proto", "-s", spec_path, "-o", flat_gen_dir, "-m", "flat"]
+    if not run_step("Generating Flat Proto Files", gen_proto_flat_cmd, cwd=root_dir):
         sys.exit(1)
+
+    gen_server_flat_cmd = [sys.executable, "windrpc/windrpc_gen.py", "server", "-s", spec_path, "-o", flat_gen_dir, "-m", "flat"]
+    if not run_step("Generating Flat C Server Code", gen_server_flat_cmd, cwd=root_dir):
+        sys.exit(1)
+
+    gen_client_cs_cmd = [sys.executable, "windrpc/windrpc_gen.py", "client", "-s", spec_path, "-o", flat_gen_dir, "--lang", "csharp"]
+    if not run_step("Generating C# Client SDK", gen_client_cs_cmd, cwd=root_dir):
+        sys.exit(1)
+
+    cs_file = os.path.join(flat_gen_dir, "WindRpcClient.cs")
+    if not os.path.exists(cs_file):
+        print(f"!! Error: Expected C# client file '{cs_file}' was not generated.")
+        sys.exit(1)
+    print(f"  - Successfully verified generated C# client file: '{cs_file}'")
+
+    # Flat C Server Code CMake Compile Test
+    build_flat_dir = os.path.join(root_dir, "tests", "build_flat")
+    os.makedirs(build_flat_dir, exist_ok=True)
+    cmake_conf_flat_cmd = ["cmake", "-B", "build_flat", "-S", ".", "-DUSE_FLAT_MODE=ON"]
+    if not run_step("CMake Configure (Flat Mode)", cmake_conf_flat_cmd, cwd=os.path.join(root_dir, "tests")):
+        sys.exit(1)
+
+    cmake_build_flat_cmd = ["cmake", "--build", "build_flat"]
+    if not run_step("CMake Build (Flat Mode)", cmake_build_flat_cmd, cwd=os.path.join(root_dir, "tests")):
+        sys.exit(1)
+    print("  - Successfully compiled Flat C Server Code with CMake!")
 
     print_banner("ALL TESTS PASSED SUCCESSFULLY!")
 

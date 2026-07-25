@@ -1,4 +1,4 @@
-package: pkg_trmp5b
+package: pkg_4gs9bb
 config:
   request_id:
     enable: true
@@ -13,7 +13,7 @@ services:
       type: fixed32
       property: repeated
       nanopb:
-        max_count: 10
+        max_count: 100
   rpcs:
   - id: 1
     name: display_pixels
@@ -29,6 +29,9 @@ services:
       type: uint32
     - number: 2
       name: ampere_mill
+      type: uint32
+    - number: 3
+      name: watt_mill
       type: uint32
   rpcs:
   - id: 1

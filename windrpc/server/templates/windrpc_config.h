@@ -3,6 +3,16 @@
 
 #include "windrpc_common.h"
 
+/* -------------------------------------------------------------------------- */
+/*                              Envelope Mode                                 */
+/* -------------------------------------------------------------------------- */
+#define WINDRPC_ENVELOPE_NESTED 0
+#define WINDRPC_ENVELOPE_FLAT   1
+
+#ifndef WINDRPC_ENVELOPE_MODE
+#define WINDRPC_ENVELOPE_MODE WINDRPC_ENVELOPE_NESTED
+#endif
+
 #define WINDRPC_REQUEST_ID_TYPE WINDRPC_REQUEST_ID_TYPE_NONE
 
 #define WINDRPC_LOG_LEVEL LOG_LEVEL_INF

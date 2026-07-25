@@ -214,8 +214,31 @@ def generate_types_proto(spec_data, package_prefix):
 
 def generate_service_proto(service_spec, spec_data, package_prefix):
     service_name = service_spec['name']
+    svc_id = service_spec.get('id', 0)
     content = [get_generated_file_header(), 'syntax = "proto3";\n',
                f"package {package_prefix}.windrpc.service.{service_name};\n"]
+
+    doc_lines = ["/**"]
+    doc_lines.append(f" * Service: {service_name} (ID: {svc_id})")
+    doc_lines.append(" * RPC Methods:")
+    for rpc in service_spec.get('rpcs', []):
+        rpc_type = rpc.get('type', '').upper()
+        rpc_name = rpc['name']
+        rpc_id = rpc['id']
+        combined_id = (svc_id << 8) | rpc_id
+        desc = rpc.get('description', rpc.get('summary', ''))
+        desc_str = f" - {desc}" if desc else ""
+        if rpc_type == 'REQUEST_ONLY':
+            doc_lines.append(f" *  - {rpc_name} (0x{combined_id:04X}): param={rpc.get('command', 'types.Empty')}, return=void{desc_str}")
+        elif rpc_type == 'REQUEST_RESPONSE':
+            doc_lines.append(f" *  - {rpc_name} (0x{combined_id:04X}): param={rpc.get('command', 'types.Empty')}, return={rpc.get('result', 'types.Empty')}{desc_str}")
+        elif rpc_type == 'NOTIFICATION':
+            event_combined_id = (svc_id << 8) | (rpc_id | 0x80)
+            doc_lines.append(f" *  - subscribe_{rpc_name} (0x{combined_id:04X}): param=types.Subscribe, return=types.Empty")
+            doc_lines.append(f" *  - {rpc_name} Event (0x{event_combined_id:04X}): event={rpc.get('event', 'types.Empty')}{desc_str}")
+    doc_lines.append(" */\n")
+    content.append("\n".join(doc_lines))
+
     imports_to_add = set()
     all_type_names = []
     resolved_type_names = []
@@ -299,18 +322,20 @@ def generate_service_proto(service_spec, spec_data, package_prefix):
             resolved_type_names.append(event_type)
             event_rpcs.append(f"    {event_type} {rpc_name} = {rpc_id};")
 
-    if command_rpcs:
-        content.extend(["message Request {", "  oneof command {"])
-        content.extend(command_rpcs)
-        content.extend(["  }", "}\n"])
-    if result_rpcs:
-        content.extend(["message Response {", "  oneof result {"])
-        content.extend(result_rpcs)
-        content.extend(["  }", "}\n"])
-    if event_rpcs:
-        content.extend(["message Notification {", "  oneof event {"])
-        content.extend(event_rpcs)
-        content.extend(["  }", "}\n"])
+    envelope_mode = spec_data.get('config', {}).get('envelope_mode', 'nested')
+    if envelope_mode != 'flat':
+        if command_rpcs:
+            content.extend(["message Request {", "  oneof command {"])
+            content.extend(command_rpcs)
+            content.extend(["  }", "}\n"])
+        if result_rpcs:
+            content.extend(["message Response {", "  oneof result {"])
+            content.extend(result_rpcs)
+            content.extend(["  }", "}\n"])
+        if event_rpcs:
+            content.extend(["message Notification {", "  oneof event {"])
+            content.extend(event_rpcs)
+            content.extend(["  }", "}\n"])
 
     import_paths = generate_import_paths(resolved_type_names)
     if len(import_paths) > 0:
@@ -319,15 +344,39 @@ def generate_service_proto(service_spec, spec_data, package_prefix):
     return "\n".join(content)
 
 
+def _format_rpc_doc_comment(svc_name, svc_id, rpc):
+    rpc_type = rpc.get('type', '').upper()
+    rpc_name = rpc['name']
+    rpc_id = rpc['id']
+    desc = rpc.get('description', rpc.get('summary', 'No description provided.'))
+    combined_id = combine_ids(svc_id, rpc_id)
+
+    lines = []
+    lines.append("  /**")
+    lines.append(f"   * @service {svc_name}")
+    lines.append(f"   * @rpc {rpc_name}")
+    lines.append(f"   * @type {rpc_type}")
+    lines.append(f"   * @id 0x{combined_id:04X} ({combined_id})")
+    lines.append(f"   * @summary {desc}")
+
+    if rpc_type in ['REQUEST_ONLY', 'REQUEST_RESPONSE']:
+        lines.append(f"   * @param command {rpc.get('command', 'types.Empty')}")
+    if rpc_type == 'REQUEST_RESPONSE':
+        lines.append(f"   * @return result {rpc.get('result', 'types.Empty')}")
+    elif rpc_type == 'REQUEST_ONLY':
+        lines.append("   * @return void")
+    elif rpc_type == 'NOTIFICATION':
+        lines.append(f"   * @param subscribe types.Subscribe (enable=true/false)")
+        lines.append(f"   * @event notification {rpc.get('event', 'types.Empty')}")
+
+    lines.append("   */")
+    return "\n".join(lines)
+
+
 def generate_windrpc_proto(spec_data, package_prefix):
 
-    # Todo: check!
-    # config = spec_data.get('config', {})
-    # if config['request_id'] is not None:
-    #     use_request_id = config['request_id'].get('enable', False)
-    # else:
-    # use request_id
     use_request_id = True
+    envelope_mode = spec_data.get('config', {}).get('envelope_mode', 'nested')
 
     content = [get_generated_file_header(), 'syntax = "proto3";\n',
                f'package {package_prefix}.windrpc.core;\n']
@@ -335,56 +384,70 @@ def generate_windrpc_proto(spec_data, package_prefix):
         content.append(
             f'import "{package_prefix}/windrpc/service/{svc["name"]}.proto";')
     content.append(f'import "{package_prefix}/windrpc/types/types.proto";\n')
-    content.append(f"enum RpcId {{\n  RPC_ID_UNKNOWN = 0;")
+    content.append(f"enum RpcId {{\n  RPC_ID_UNKNOWN = 0;\n")
     for svc in spec_data.get('services', []):
+        svc_name = svc['name']
+        svc_id = svc['id']
         for rpc in svc.get('rpcs', []):
-            content.append(
-                f"  RPC_ID_{svc['name'].upper()}_{rpc['name'].upper()} = {combine_ids(svc['id'], rpc['id'])};")
+            rpc_type = rpc.get('type', '').upper()
+            doc_comment = _format_rpc_doc_comment(svc_name, svc_id, rpc)
+            content.append(doc_comment)
+            if rpc_type == 'NOTIFICATION':
+                sub_name = f"subscribe_{rpc['name']}"
+                content.append(
+                    f"  RPC_ID_{svc_name.upper()}_{sub_name.upper()} = {combine_ids(svc_id, rpc['id'])};\n")
+                event_combined_id = (svc_id << 8) | (rpc['id'] | 0x80)
+                content.append(
+                    f"  RPC_ID_{svc_name.upper()}_{rpc['name'].upper()} = {event_combined_id};\n")
+            else:
+                content.append(
+                    f"  RPC_ID_{svc_name.upper()}_{rpc['name'].upper()} = {combine_ids(svc_id, rpc['id'])};\n")
     content.append('}\n')
-    content.extend([
-        "message ClientMessage {",
-        "  oneof payload {",
-        "    Request request = 1;",
-        "  }",
-        "}\n",
-        "message Request {",
-        # "  bytes request_id = 1;",
-        "  bytes request_id = 1;" if use_request_id else "",
-        "  oneof service {"
-    ])
-    for svc in spec_data['services']:
-        if svc.get('rpcs'):
-            content.append(
-                f"    {package_prefix}.windrpc.service.{svc['name']}.Request {svc['name']} = {svc['id']};")
-    content.extend(["  }", "}\n"])
-    content.extend([
-        "message ServerMessage {",
-        "  oneof payload {",
-        "    Response response = 1;",
-        "    Notification notification = 2;",
-        "  }",
-        "}\n",
-        "message Response {",
-        # "  bytes request_id = 1;",
-        "  bytes request_id = 1;" if use_request_id else "",
-        "  oneof service {",
-        f"    {package_prefix}.windrpc.types.Status status = 5;"
-    ])
-    for svc in spec_data['services']:
-        if any(m.get('type', '').upper() in ['REQUEST_RESPONSE', 'NOTIFICATION'] for m in svc.get('rpcs', [])):
-            content.append(
-                f"    {package_prefix}.windrpc.service.{svc['name']}.Response {svc['name']} = {svc['id']};")
-    content.extend(["  }", "}\n"])
-    content.extend(["message Notification {", "  oneof service {"])
-    for svc in spec_data['services']:
-        if any(m.get('type', '').upper() == 'NOTIFICATION' for m in svc.get('rpcs', [])):
-            content.append(
-                f"    {package_prefix}.windrpc.service.{svc['name']}.Notification {svc['name']} = {svc['id']};")
-    content.extend(["  }", "}\n"])
+
+    if envelope_mode != 'flat':
+        content.extend([
+            "message ClientMessage {",
+            "  oneof payload {",
+            "    Request request = 1;",
+            "  }",
+            "}\n",
+            "message Request {",
+            "  bytes request_id = 1;" if use_request_id else "",
+            "  oneof service {"
+        ])
+        for svc in spec_data['services']:
+            if svc.get('rpcs'):
+                content.append(
+                    f"    {package_prefix}.windrpc.service.{svc['name']}.Request {svc['name']} = {svc['id']};")
+        content.extend(["  }", "}\n"])
+        content.extend([
+            "message ServerMessage {",
+            "  oneof payload {",
+            "    Response response = 1;",
+            "    Notification notification = 2;",
+            "  }",
+            "}\n",
+            "message Response {",
+            "  bytes request_id = 1;" if use_request_id else "",
+            "  oneof service {",
+            f"    {package_prefix}.windrpc.types.Status status = 5;"
+        ])
+        for svc in spec_data['services']:
+            if any(m.get('type', '').upper() in ['REQUEST_RESPONSE', 'NOTIFICATION'] for m in svc.get('rpcs', [])):
+                content.append(
+                    f"    {package_prefix}.windrpc.service.{svc['name']}.Response {svc['name']} = {svc['id']};")
+        content.extend(["  }", "}\n"])
+        content.extend(["message Notification {", "  oneof service {"])
+        for svc in spec_data['services']:
+            if any(m.get('type', '').upper() == 'NOTIFICATION' for m in svc.get('rpcs', [])):
+                content.append(
+                    f"    {package_prefix}.windrpc.service.{svc['name']}.Notification {svc['name']} = {svc['id']};")
+        content.extend(["  }", "}\n"])
+
     return "\n".join(content)
 
 
-def generate(core_spec_path, user_spec_path, output_dir, verbose=False):
+def generate(core_spec_path, user_spec_path, output_dir, mode=None, verbose=False):
     try:
         with open(core_spec_path, 'r', encoding='utf-8') as f:
             core_spec_data = yaml.load(f, Loader=LineNumberLoader)
@@ -398,6 +461,12 @@ def generate(core_spec_path, user_spec_path, output_dir, verbose=False):
         sys.exit(1)
 
     spec_data = merge_specs(core_spec_data, user_spec_data)
+
+    if mode:
+        if 'config' not in spec_data or not isinstance(spec_data['config'], dict):
+            spec_data['config'] = {}
+        spec_data['config']['envelope_mode'] = mode
+
     spec_validator.validate(spec_data, verbose=verbose)
     print("YAML Specification validation successful.")
 
@@ -422,7 +491,6 @@ def generate(core_spec_path, user_spec_path, output_dir, verbose=False):
     for service_spec in spec_data.get('services', []):
         file_path = os.path.join(service_path, f"{service_spec['name']}.proto")
         with open(file_path, 'w', encoding='utf-8') as f:
-            # [수정] NameError 수정: package_prefix -> package_name
             f.write(generate_service_proto(
                 service_spec, spec_data, package_name))
         print(f"Generated {file_path}")
