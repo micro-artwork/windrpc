@@ -69,3 +69,5 @@ __pycache__
 /tests/build*
 /tests/generated*
 .vscode
+node_modules
+tests/csharp_test/obj

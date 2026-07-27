@@ -179,15 +179,17 @@ def generate_js_client(spec_data, package_name):
             rpc_name = rpc['name']
             rpc_upper = rpc_name.upper()
             rpc_pascal = to_pascal(rpc_name)
-            command = rpc.get('command', '')
+            rpc_type = rpc.get('type', 'REQUEST_RESPONSE').upper()
+            command = rpc.get('command') or rpc.get('request', '')
 
             cmd_msg = command.split('.')[-1] if command else ''
             cmd_pascal = to_pascal(cmd_msg)
             has_payload = bool(cmd_msg and cmd_msg.lower() not in ('empty', ''))
 
+            # ── buildXxxFrame(): always generated for all RPC types ──────────
             if has_payload:
                 svc_class_lines.append(f"    /**")
-                svc_class_lines.append(f"     * Builds a COBS-framed packet for {rpc_name}.")
+                svc_class_lines.append(f"     * Builds a binary packet frame for {rpc_name}.")
                 svc_class_lines.append(f"     * @param {{{{ {', '.join(f['name'] for f in msg_map.get(cmd_msg, []))} }}}} payload - {cmd_msg} message")
                 svc_class_lines.append(f"     * @returns {{Uint8Array}} ready-to-send frame")
                 svc_class_lines.append(f"     */")
@@ -197,13 +199,33 @@ def generate_js_client(spec_data, package_name):
                 svc_class_lines.append("    }")
             else:
                 svc_class_lines.append(f"    /**")
-                svc_class_lines.append(f"     * Builds a COBS-framed packet for {rpc_name} (no payload).")
+                svc_class_lines.append(f"     * Builds a binary packet frame for {rpc_name} (no payload).")
                 svc_class_lines.append(f"     * @returns {{Uint8Array}} ready-to-send frame")
                 svc_class_lines.append(f"     */")
                 svc_class_lines.append(f"    build{rpc_pascal}Frame() {{")
                 svc_class_lines.append(f"        return this.client.buildFrame(RPC_ID.{svc_upper}_{rpc_upper});")
                 svc_class_lines.append("    }")
             svc_class_lines.append("")
+
+            # ── sendXxx(): only for REQUEST_RESPONSE — Promise-based with timeout ──
+            if rpc_type == 'REQUEST_RESPONSE':
+                payload_arg = "payload = {}, " if has_payload else ""
+                payload_encode = f"encode{cmd_pascal}(payload)" if has_payload else "new Uint8Array(0)"
+                svc_class_lines.append(f"    /**")
+                svc_class_lines.append(f"     * Sends {rpc_name} and returns a Promise that resolves with the response.")
+                svc_class_lines.append(f"     * Registers a pending entry so the response frame is matched by seqId.")
+                if has_payload:
+                    svc_class_lines.append(f"     * @param {{{{ {', '.join(f['name'] for f in msg_map.get(cmd_msg, []))} }}}} payload - {cmd_msg} message")
+                svc_class_lines.append(f"     * @param {{function}} sendFn - function(frame: Uint8Array) that writes to transport")
+                svc_class_lines.append(f"     * @param {{number}} [timeoutMs=2000] - response timeout in milliseconds")
+                svc_class_lines.append(f"     * @returns {{Promise<{{rpcId: number, seqId: number, payload: Uint8Array}}>>}}")
+                svc_class_lines.append(f"     */")
+                svc_class_lines.append(f"    send{rpc_pascal}({payload_arg}sendFn, timeoutMs = 2000) {{")
+                svc_class_lines.append(f"        const payloadBytes = {payload_encode};")
+                svc_class_lines.append(f"        return this.client.sendRequest(RPC_ID.{svc_upper}_{rpc_upper}, payloadBytes, sendFn, timeoutMs);")
+                svc_class_lines.append("    }")
+                svc_class_lines.append("")
+
         svc_class_lines.append("}")
         svc_class_lines.append("")
 

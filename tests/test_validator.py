@@ -107,5 +107,32 @@ class TestSpecValidator(unittest.TestCase):
         with self.assertRaises(SystemExit):
             spec_validator.validate(self.valid_spec, verbose=False)
 
+    def test_request_response_aliases_pass(self):
+        # request/response 및 params/returns 별칭 구문 테스트
+        spec_request_response = {
+            'package': 'test_pkg',
+            'types': {
+                'messages': [{'name': 'Empty'}]
+            },
+            'services': [
+                {
+                    'id': 10,
+                    'name': 'power',
+                    'messages': [{'name': 'PowerInfo', 'fields': [{'number': 1, 'name': 'v', 'type': 'uint32'}]}],
+                    'rpcs': [
+                        {'id': 1, 'name': 'get_power_req', 'type': 'REQUEST_RESPONSE', 'request': 'types.Empty', 'response': 'PowerInfo'},
+                        {'id': 2, 'name': 'get_power_param', 'type': 'REQUEST_RESPONSE', 'params': 'types.Empty', 'returns': 'PowerInfo'}
+                    ]
+                }
+            ]
+        }
+        # spec_validator.validate가 SystemExit 없이 성공해야 함
+        try:
+            spec_validator.validate(spec_request_response, verbose=False)
+        except SystemExit:
+            self.fail("request/response or params/returns spec raised SystemExit unexpectedly.")
+
+
 if __name__ == '__main__':
     unittest.main()
+

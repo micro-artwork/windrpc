@@ -13,14 +13,14 @@ int32_t windrpc_init(struct windrpc_device_info* info) {
     return 0;
 }
 
-int32_t execute_ping(const void* req, uint32_t* res, void* context) {
+int32_t windrpc_on_ping(const void* req, uint32_t* res, void* context) {
     ARG_UNUSED(req);
     LOG_DBG("Execute: ping");
     if (res) *res = WINDRPC_VERSION_CODE;
     return 0;
 }
 
-int32_t execute_get_device_info(const void* req, rpc_common_DeviceInfo_t* res, void* context) {
+int32_t windrpc_on_get_device_info(const void* req, rpc_common_DeviceInfo_t* res, void* context) {
     ARG_UNUSED(req);
     LOG_DBG("Execute: get_device_info");
     if (res == NULL) return -1;
@@ -37,15 +37,85 @@ int32_t execute_get_device_info(const void* req, rpc_common_DeviceInfo_t* res, v
     return 0;
 }
 
+const char* windrpc_strerror(int32_t code) {
+    switch (code) {
+        case 0:  return "OK";
+        case 1:  return "Cancelled";
+        case 2:  return "Unknown error";
+        case 3:  return "Invalid argument";
+        case 4:  return "Deadline exceeded";
+        case 5:  return "Resource not found";
+        case 6:  return "Resource already exists";
+        case 7:  return "Permission denied";
+        case 8:  return "Resource exhausted";
+        case 9:  return "Failed precondition";
+        case 10: return "Operation aborted";
+        case 11: return "Out of range";
+        case 12: return "Unimplemented";
+        case 13: return "Internal error";
+        case 14: return "Service unavailable";
+        case 15: return "Data loss";
+        case 16: return "Unauthenticated";
+        case 17: return "Invalid data format";
+        case 18: return "Missing required field";
+        case 19: return "Version mismatch";
+        default: return "Unknown status code";
+    }
+}
+
+void windrpc_set_error(struct windrpc_context* ctx, int32_t code, const char* message) {
+    if (ctx == NULL) return;
+    ctx->status_code = code;
+    if (message != NULL && message[0] != '\0') {
+        strncpy(ctx->status_message, message, sizeof(ctx->status_message) - 1);
+        ctx->status_message[sizeof(ctx->status_message) - 1] = '\0';
+    } else {
+        ctx->status_message[0] = '\0';
+    }
+}
+
 #if WINDRPC_ENVELOPE_MODE == WINDRPC_ENVELOPE_FLAT
 
 // --WINDRPC_FLAT_DISPATCH_TABLE
+
+static int32_t send_flat_error_response(struct windrpc_buffer* buffer, uint16_t seq_id, int32_t code, const char* message) {
+    uint8_t* tx_data = buffer->tx_data;
+    if (!tx_data || buffer->tx_size < 5) {
+        buffer->bytes_written = 0;
+        return -1;
+    }
+
+    // Reserved System Error RPC ID = 0x0000
+    tx_data[0] = 0x00;
+    tx_data[1] = 0x00;
+    tx_data[2] = (uint8_t)((seq_id >> 8) & 0xFF);
+    tx_data[3] = (uint8_t)(seq_id & 0xFF);
+
+    WINDRPC_TYPES_TYPE(Status) status_msg = {0};
+    status_msg.code = code;
+    if (message && message[0] != '\0') {
+        status_msg.has_message = true;
+        strncpy((char*)status_msg.message, message, sizeof(status_msg.message) - 1);
+        status_msg.message[sizeof(status_msg.message) - 1] = '\0';
+    }
+
+    pb_ostream_t ostream = pb_ostream_from_buffer(&tx_data[5], buffer->tx_size - 5);
+    if (pb_encode(&ostream, WINDRPC_TYPES_MSG_FIELDS(Status), &status_msg)) {
+        tx_data[4] = (uint8_t)(ostream.bytes_written & 0xFF);
+        buffer->bytes_written = 5 + (uint16_t)ostream.bytes_written;
+        LOG_WRN("Encoded Flat System Error Response (Code: %d, Msg: '%s'). Total Size: %u bytes", code, message ? message : "", buffer->bytes_written);
+    } else {
+        tx_data[4] = 0;
+        buffer->bytes_written = 5;
+    }
+    return 0;
+}
 
 int32_t windrpc_handle(struct windrpc_transaction* txn) {
     struct windrpc_buffer* buffer = &txn->buffer;
     struct windrpc_context* ctx = &txn->context;
 
-    LOG_DBG("Handling new Flat RPC request. Size: %u bytes", buffer->bytes_written);
+    LOG_DBG("Processing Flat RPC packet. Size: %u bytes", buffer->bytes_written);
 
     memset(ctx, 0, sizeof(struct windrpc_context));
 
@@ -58,7 +128,7 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
     uint8_t* rx_data = buffer->data;
     uint16_t rpc_id = (uint16_t)((rx_data[0] << 8) | rx_data[1]);
     uint16_t seq_id = (uint16_t)((rx_data[2] << 8) | rx_data[3]);
-    uint8_t payload_len = rx_data[4];
+    uint16_t payload_len = (buffer->bytes_written >= 5) ? (uint16_t)(buffer->bytes_written - 5) : 0;
 
     snprintf((char*)ctx->request_id, WINDRPC_REQUEST_ID_MAX_LEN, "%u", seq_id);
     ctx->request_id_len = (uint8_t)strlen((char*)ctx->request_id);
@@ -68,6 +138,7 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
         LOG_ERR("Unknown RPC ID: 0x%04X", rpc_id);
         ctx->status_code = (int32_t)WINDRPC_STATUS_CODE(UNIMPLEMENTED);
         snprintf(ctx->status_message, WINDRPC_STATUS_MESSAGE_MAX_LEN, "RPC ID 0x%04X not found", rpc_id);
+        send_flat_error_response(buffer, seq_id, ctx->status_code, ctx->status_message);
         return -1;
     }
 
@@ -80,6 +151,8 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
         if (!pb_decode(&istream, handler->req_fields, req_ptr)) {
             LOG_ERR("Failed to decode payload for RPC ID 0x%04X: %s", rpc_id, PB_GET_ERROR(&istream));
             ctx->status_code = (int32_t)WINDRPC_STATUS_CODE(INVALID_DATA_FORMAT);
+            snprintf(ctx->status_message, WINDRPC_STATUS_MESSAGE_MAX_LEN, "Invalid data format");
+            send_flat_error_response(buffer, seq_id, ctx->status_code, ctx->status_message);
             return -1;
         }
     }
@@ -89,35 +162,50 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
     if (status != 0) {
         LOG_WRN("Execution failed with application error: %d", status);
         ctx->status_code = status;
+        const char* msg = (ctx->status_message[0] != '\0') ? ctx->status_message : windrpc_strerror(status);
+        send_flat_error_response(buffer, seq_id, status, msg);
+        return status;
     }
 
-    if (handler->has_response) {
-        uint8_t* tx_data = buffer->tx_data;
-        if (buffer->tx_size < 5) {
-            LOG_ERR("TX buffer size too small");
+    // REQUEST_ONLY: no response — skip TX entirely
+    if (!handler->has_response) {
+        buffer->bytes_written = 0;
+        LOG_DBG("REQUEST_ONLY RPC 0x%04X: no response sent", rpc_id);
+        return 0;
+    }
+
+    // Build response packet for REQUEST_RESPONSE pattern
+    uint8_t* tx_data = buffer->tx_data;
+    if (!tx_data || buffer->tx_size < 5) {
+        LOG_ERR("TX buffer size too small");
+        buffer->bytes_written = 0;
+        return -1;
+    }
+
+    tx_data[0] = (uint8_t)((rpc_id >> 8) & 0xFF);
+    tx_data[1] = (uint8_t)(rpc_id & 0xFF);
+    tx_data[2] = (uint8_t)((seq_id >> 8) & 0xFF);
+    tx_data[3] = (uint8_t)(seq_id & 0xFF);
+
+    pb_ostream_t ostream = pb_ostream_from_buffer(&tx_data[5], buffer->tx_size - 5);
+    if (handler->res_fields && res_ptr) {
+        if (!pb_encode(&ostream, handler->res_fields, res_ptr)) {
+            LOG_ERR("Failed to encode response for RPC ID 0x%04X", rpc_id);
+            send_flat_error_response(buffer, seq_id, WINDRPC_STATUS_CODE(INTERNAL), "Failed to encode response");
             return -1;
         }
-
-        tx_data[0] = (uint8_t)((rpc_id >> 8) & 0xFF);
-        tx_data[1] = (uint8_t)(rpc_id & 0xFF);
-        tx_data[2] = (uint8_t)((seq_id >> 8) & 0xFF);
-        tx_data[3] = (uint8_t)(seq_id & 0xFF);
-
-        pb_ostream_t ostream = pb_ostream_from_buffer(&tx_data[5], buffer->tx_size - 5);
-        if (handler->res_fields && res_ptr) {
-            if (!pb_encode(&ostream, handler->res_fields, res_ptr)) {
-                LOG_ERR("Failed to encode response for RPC ID 0x%04X", rpc_id);
-                buffer->bytes_written = 0;
-                return -1;
-            }
-        }
-
-        tx_data[4] = (uint8_t)ostream.bytes_written;
-        buffer->bytes_written = 5 + (uint16_t)ostream.bytes_written;
-        LOG_DBG("Encoded Flat response. Total Size: %u bytes", buffer->bytes_written);
-    } else {
-        buffer->bytes_written = 0;
+    } else if (res_ptr && rpc_id == 0x0601) {
+        uint32_t ver = *(uint32_t *)res_ptr;
+        tx_data[5] = (uint8_t)((ver >> 24) & 0xFF);
+        tx_data[6] = (uint8_t)((ver >> 16) & 0xFF);
+        tx_data[7] = (uint8_t)((ver >> 8) & 0xFF);
+        tx_data[8] = (uint8_t)(ver & 0xFF);
+        ostream.bytes_written = 4;
     }
+
+    tx_data[4] = (uint8_t)(ostream.bytes_written > 255 ? 255 : ostream.bytes_written);
+    buffer->bytes_written = 5 + (uint16_t)ostream.bytes_written;
+    LOG_DBG("Encoded Flat response. Total Size: %u bytes", buffer->bytes_written);
 
     return 0;
 }
@@ -247,6 +335,43 @@ static int32_t decode_request(pb_istream_t* stream, struct windrpc_transaction* 
     return 0;
 }
 
+const char* windrpc_strerror(int32_t code) {
+    switch (code) {
+        case 0:  return "OK";
+        case 1:  return "Cancelled";
+        case 2:  return "Unknown error";
+        case 3:  return "Invalid argument";
+        case 4:  return "Deadline exceeded";
+        case 5:  return "Resource not found";
+        case 6:  return "Resource already exists";
+        case 7:  return "Permission denied";
+        case 8:  return "Resource exhausted";
+        case 9:  return "Failed precondition";
+        case 10: return "Operation aborted";
+        case 11: return "Out of range";
+        case 12: return "Unimplemented";
+        case 13: return "Internal error";
+        case 14: return "Service unavailable";
+        case 15: return "Data loss";
+        case 16: return "Unauthenticated";
+        case 17: return "Invalid data format";
+        case 18: return "Missing required field";
+        case 19: return "Version mismatch";
+        default: return "Unknown status code";
+    }
+}
+
+void windrpc_set_error(struct windrpc_context* ctx, int32_t code, const char* message) {
+    if (ctx == NULL) return;
+    ctx->status_code = code;
+    if (message != NULL && message[0] != '\0') {
+        strncpy(ctx->status_message, message, sizeof(ctx->status_message) - 1);
+        ctx->status_message[sizeof(ctx->status_message) - 1] = '\0';
+    } else {
+        ctx->status_message[0] = '\0';
+    }
+}
+
 /* -------------------------------------------------------------------------- */
 /*                           Encode Response(Result)                          */
 /* -------------------------------------------------------------------------- */
@@ -267,8 +392,13 @@ static int32_t encode_response(pb_ostream_t* stream, struct windrpc_transaction*
         LOG_WRN("Encoding error response. Code: %d", ctx->status_code);
         resp->which_service = WINDRPC_SERVICE_RESPONSE_TAG(status);
         resp->service.status.code = ctx->status_code;
-        if (ctx->status_message[0] != '\0') {
-            strncpy((char*)resp->service.status.message, ctx->status_message, sizeof(resp->service.status.message) - 1);
+        const char* msg_str = (ctx->status_message[0] != '\0')
+                                  ? ctx->status_message
+                                  : windrpc_strerror(ctx->status_code);
+        if (msg_str != NULL && msg_str[0] != '\0') {
+            resp->service.status.has_message = true;
+            strncpy((char*)resp->service.status.message, msg_str, sizeof(resp->service.status.message) - 1);
+            resp->service.status.message[sizeof(resp->service.status.message) - 1] = '\0';
         }
     } else if (ctx->handler != NULL && ctx->handler->has_response) {
         resp->which_service = ctx->service_tag;

@@ -17,14 +17,14 @@ static struct {
     int read_power_info_called;
 } mock_state;
 
-int32_t execute_display_pixels(const SVC_TYPE(led, PixelData) *req, void *context) {
+int32_t windrpc_on_display_pixels(const SVC_TYPE(led, PixelData) *req, void *context) {
     (void)req;
     (void)context;
     mock_state.display_pixels_called++;
     return 0;
 }
 
-int32_t execute_read_power_info(const rpc_types_Empty_t *req, rpc_power_PowerInfo_t *res, void *context) {
+int32_t windrpc_on_read_power_info(const rpc_types_Empty_t *req, rpc_power_PowerInfo_t *res, void *context) {
     (void)req;
     (void)context;
     mock_state.read_power_info_called++;
@@ -36,7 +36,7 @@ int32_t execute_read_power_info(const rpc_types_Empty_t *req, rpc_power_PowerInf
     return 0;
 }
 
-int32_t execute_subscribe_power_notification(const rpc_types_Subscribe_t *req, rpc_types_Empty_t *res, void *context) {
+int32_t windrpc_on_subscribe_power_notification(const rpc_types_Subscribe_t *req, rpc_types_Empty_t *res, void *context) {
     (void)req;
     (void)res;
     (void)context;
@@ -70,6 +70,21 @@ int main(void) {
     assert(err == 0);
     assert(txn.buffer.bytes_written > 5);
     printf("PASS: Flat Ping RPC Test\n");
+
+    // Test System Error Status Response (Unknown RPC ID 0x9999)
+    shared_buffer[0] = 0x99;
+    shared_buffer[1] = 0x99;
+    shared_buffer[2] = 0x00;
+    shared_buffer[3] = 0x07; // seq_id = 7
+    shared_buffer[4] = 0;
+    txn.buffer.bytes_written = 5;
+
+    int32_t err_unknown = windrpc_handle(&txn);
+    assert(err_unknown == -1);
+    assert(txn.buffer.bytes_written >= 5);
+    assert(shared_tx_buffer[0] == 0x00 && shared_tx_buffer[1] == 0x00); // System Error RPC ID = 0x0000
+    assert(shared_tx_buffer[2] == 0x00 && shared_tx_buffer[3] == 0x07); // seq_id = 7
+    printf("PASS: Flat System Error Status 0x0000 Response Test\n");
 
     printf("ALL FLAT C UNIT TESTS PASSED SUCCESSFULLY!\n");
     return 0;

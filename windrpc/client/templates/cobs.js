@@ -4,7 +4,7 @@
  */
 
 export function cobsEncode(inputData) {
-    const input = inputData instanceof Uint8Array ? inputData : new Uint8Array(inputData);
+    const input = (inputData && inputData.length !== undefined) ? Uint8Array.from(inputData) : new Uint8Array(inputData || 0);
     const output = [];
     let codeIndex = 0;
     let code = 1;
@@ -30,7 +30,7 @@ export function cobsEncode(inputData) {
 }
 
 export function cobsDecode(inputData) {
-    const input = inputData instanceof Uint8Array ? inputData : new Uint8Array(inputData);
+    const input = (inputData && inputData.length !== undefined) ? Uint8Array.from(inputData) : new Uint8Array(inputData || 0);
     const output = [];
     let i = 0;
 

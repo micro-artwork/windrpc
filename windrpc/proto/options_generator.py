@@ -29,6 +29,10 @@ def generate_options_files(spec_data, output_dir, package_prefix, verbose=False)
     default_array_max = config.get('default_array_max_count', 16)
 
     options_by_file = collections.defaultdict(list)
+    options_by_file['types'] = []
+    options_by_file['windrpc'] = []
+    for service_spec in spec_data.get('services', []):
+        options_by_file[service_spec['name']] = []
 
     def _collect_options(item, current_service_name, current_msg_name=None):
         """재귀적으로 'nanopb' 옵션을 수집하는 헬퍼 함수입니다."""
@@ -96,15 +100,16 @@ def generate_options_files(spec_data, output_dir, package_prefix, verbose=False)
 
     # --- 4. 파일 쓰기 ---
     for file_key, options_list in options_by_file.items():
-        # 파일 이름 결정 로직 수정
+        # 파일 이름 결정 로직: output_path(package/windrpc) 기준으로 .options 파일 배치
         if file_key == 'types':
-            options_file_name = 'types/types.options'
+            options_file_name = os.path.join('types', 'types.options')
         elif file_key == 'windrpc':
-            options_file_name = 'core/windrpc.options'
+            options_file_name = os.path.join('core', 'windrpc.options')
         else:  # 서비스 파일인 경우
-            options_file_name = f"service/{file_key}.options"
+            options_file_name = os.path.join('service', f"{file_key}.options")
 
         options_file_path = os.path.join(output_dir, options_file_name)
+        os.makedirs(os.path.dirname(options_file_path), exist_ok=True)
 
         with open(options_file_path, 'w', encoding='utf-8') as f:
             f.write(f"# Nanopb options for {file_key}\n")

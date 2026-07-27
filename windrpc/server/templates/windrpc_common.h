@@ -46,6 +46,10 @@
 #ifndef LOG_ERR
 #define LOG_ERR(...)
 #endif
+
+#ifndef ARG_UNUSED
+#define ARG_UNUSED(x) (void)(x)
+#endif
 #endif
 
 /* -------------------------------------------------------------------------- */

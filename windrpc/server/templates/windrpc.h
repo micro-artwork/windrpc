@@ -49,6 +49,11 @@ struct windrpc_transaction {
 int32_t windrpc_init(struct windrpc_device_info *device_info);
 int32_t windrpc_handle(struct windrpc_transaction *txn);
 int32_t windrpc_notify(struct windrpc_transaction *txn);
+const char *windrpc_strerror(int32_t code);
+void windrpc_set_error(struct windrpc_context *ctx, int32_t code, const char *message);
+
+int32_t windrpc_process_packet(const uint8_t *rx_packet, uint16_t rx_len, uint32_t transport_id,
+			      uint8_t *out_resp_buf, uint16_t max_resp_len, uint16_t *out_resp_len);
 
 /* -------------------------------------------------------------------------- */
 /*                      WindRPC Type Aliases (Shortcuts)                      */

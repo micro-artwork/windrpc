@@ -54,10 +54,12 @@ types:
           name: message
           type: string
           property: optional
+          nanopb: { max_length: 64 }
         - number: 3
           name: details
           type: bytes
           property: optional
+          nanopb: { max_length: 64 }
 
 ## ---------------------------------------------------------------------------
 ## Core Services

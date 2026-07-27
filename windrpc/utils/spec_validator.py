@@ -426,27 +426,30 @@ def validate(spec_data, verbose=False):
                     f"Invalid 'type' value '{op.get('type')}'. Must be one of {VALID_RPC_TYPES}.", op_context, line))
                 continue
 
+            req_type = op.get('request') or op.get('command') or op.get('params') or op.get('parameter') or op.get('input')
+            res_type = op.get('response') or op.get('result') or op.get('returns') or op.get('return') or op.get('output')
+
             if type == 'REQUEST_ONLY':
-                if 'command' not in op:
+                if not req_type:
                     errors.append(ValidationError(
-                        "'command' key is required for REQUEST_ONLY.", op_context, line))
-                elif not is_valid_type(op['command'], svc_name):
+                        "'request' (or 'command') key is required for REQUEST_ONLY.", op_context, line))
+                elif not is_valid_type(req_type, svc_name):
                     errors.append(ValidationError(
-                        f"Invalid type for 'command': {op['command']}", op_context, line))
+                        f"Invalid type for 'request': {req_type}", op_context, line))
 
             elif type == 'REQUEST_RESPONSE':
-                if 'command' not in op:
+                if not req_type:
                     errors.append(ValidationError(
-                        "'command' key is required for REQUEST_RESPONSE.", op_context, line))
-                elif not is_valid_type(op['command'], svc_name):
+                        "'request' (or 'command') key is required for REQUEST_RESPONSE.", op_context, line))
+                elif not is_valid_type(req_type, svc_name):
                     errors.append(ValidationError(
-                        f"Invalid type for 'command': {op['command']}", op_context, line))
-                if 'result' not in op:
+                        f"Invalid type for 'request': {req_type}", op_context, line))
+                if not res_type:
                     errors.append(ValidationError(
-                        "'result' key is required for REQUEST_RESPONSE.", op_context, line))
-                elif not is_valid_type(op['result'], svc_name):
+                        "'response' (or 'result') key is required for REQUEST_RESPONSE.", op_context, line))
+                elif not is_valid_type(res_type, svc_name):
                     errors.append(ValidationError(
-                        f"Invalid type for 'result': {op['result']}", op_context, line))
+                        f"Invalid type for 'response': {res_type}", op_context, line))
 
             elif type == 'NOTIFICATION':
                 if 'event' not in op:
@@ -455,6 +458,7 @@ def validate(spec_data, verbose=False):
                 elif not is_valid_type(op['event'], svc_name):
                     errors.append(ValidationError(
                         f"Invalid type for 'event': {op['event']}", op_context, line))
+
 
     # --- 4. 에러 보고 ---
     if errors:

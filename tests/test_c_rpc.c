@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <assert.h>
 
@@ -32,6 +33,8 @@ static struct {
     int last_colors_count;
 
     int read_power_info_called;
+    int force_error_code;
+    char force_custom_msg[64];
 } mock_state;
 
 static bool decode_server_message_safely(struct windrpc_transaction *txn, windrpc_response_msg_t *out_resp);
@@ -44,7 +47,7 @@ static struct {
 /* -------------------------------------------------------------------------- */
 /*                                LED 서비스 모의 구현                        */
 /* -------------------------------------------------------------------------- */
-int32_t execute_display_pixels(const SVC_TYPE(led, PixelData) *req, void *context) {
+int32_t windrpc_on_display_pixels(const SVC_TYPE(led, PixelData) *req, void *context) {
     mock_state.display_pixels_called++;
     mock_state.last_colors_count = req->colors_count;
     for (pb_size_t i = 0; i < req->colors_count && i < 10; ++i) {
@@ -53,8 +56,15 @@ int32_t execute_display_pixels(const SVC_TYPE(led, PixelData) *req, void *contex
     return 0;
 }
 
-int32_t execute_read_power_info(const rpc_types_Empty_t *req, SVC_TYPE(power, PowerInfo) *res, void *context) {
+int32_t windrpc_on_read_power_info(const rpc_types_Empty_t *req, SVC_TYPE(power, PowerInfo) *res, void *context) {
     mock_state.read_power_info_called++;
+    if (mock_state.force_error_code != 0) {
+        struct windrpc_context *ctx = (struct windrpc_context *)context;
+        if (mock_state.force_custom_msg[0] != '\0') {
+            windrpc_set_error(ctx, mock_state.force_error_code, mock_state.force_custom_msg);
+        }
+        return mock_state.force_error_code;
+    }
     if (res != NULL) {
         res->voltage_mill = 12000;
         res->ampere_mill = 500;
@@ -62,7 +72,7 @@ int32_t execute_read_power_info(const rpc_types_Empty_t *req, SVC_TYPE(power, Po
     return 0;
 }
 
-int32_t execute_subscribe_power_notification(const rpc_types_Subscribe_t *req, rpc_types_Empty_t *res, void *context) {
+int32_t windrpc_on_subscribe_power_notification(const rpc_types_Subscribe_t *req, rpc_types_Empty_t *res, void *context) {
     return 0;
 }
 
@@ -391,6 +401,150 @@ static void test_get_device_info(void) {
     printf("test_get_device_info PASSED!\n");
 }
 
+static void test_windrpc_strerror_mapping(void) {
+    printf("Running test_windrpc_strerror_mapping...\n");
+    assert(strcmp(windrpc_strerror(0), "OK") == 0);
+    assert(strcmp(windrpc_strerror(1), "Cancelled") == 0);
+    assert(strcmp(windrpc_strerror(2), "Unknown error") == 0);
+    assert(strcmp(windrpc_strerror(3), "Invalid argument") == 0);
+    assert(strcmp(windrpc_strerror(5), "Resource not found") == 0);
+    assert(strcmp(windrpc_strerror(7), "Permission denied") == 0);
+    assert(strcmp(windrpc_strerror(12), "Unimplemented") == 0);
+    assert(strcmp(windrpc_strerror(17), "Invalid data format") == 0);
+    assert(strcmp(windrpc_strerror(19), "Version mismatch") == 0);
+    assert(strcmp(windrpc_strerror(999), "Unknown status code") == 0);
+    printf("test_windrpc_strerror_mapping PASSED!\n");
+}
+
+static void test_error_response_default_message(void) {
+    printf("Running test_error_response_default_message...\n");
+    memset(&mock_state, 0, sizeof(mock_state));
+    mock_state.force_error_code = 3; // INVALID_ARGUMENT
+
+    struct windrpc_transaction txn = {
+        .buffer = {
+            .data = shared_buffer,
+            .size = BUFFER_SIZE,
+#if !defined(WINDRPC_USE_INPLACE_BUFFER) || (WINDRPC_USE_INPLACE_BUFFER == 0)
+            .tx_data = shared_tx_buffer,
+            .tx_size = BUFFER_SIZE,
+#endif
+            .bytes_written = 0
+        },
+        .context = {0},
+        .operation = {0}
+    };
+
+    CORE_TYPE(ClientMessage) msg = CORE_INIT(ClientMessage);
+    msg.which_payload = WINDRPC_CLIENT_REQUEST_TAG;
+    CORE_TYPE(Request) *req = &msg.payload.request;
+    SET_REQUEST_ID(req, "tx-err-default-001");
+    req->which_service = WINDRPC_SERVICE_REQUEST_TAG(power);
+    req->service.power.which_command = WINDRPC_SERVICE_REQUEST_CMD_TAG(power, read_power_info);
+
+    pb_ostream_t ostream = pb_ostream_from_buffer(txn.buffer.data, txn.buffer.size);
+    bool ok = pb_encode(&ostream, WINDRPC_CLIENT_MESSAGE_FIELDS, &msg);
+    assert(ok);
+    txn.buffer.bytes_written = ostream.bytes_written;
+
+    int32_t ret = windrpc_handle(&txn);
+    assert(ret == 0);
+    assert(txn.buffer.bytes_written > 0);
+
+    ok = decode_server_message_safely(&txn, &decode_result.server_msg.payload.response);
+    assert(ok);
+
+    windrpc_response_msg_t *resp = &decode_result.server_msg.payload.response;
+    assert(resp->which_service == WINDRPC_SERVICE_RESPONSE_TAG(status));
+    assert(resp->service.status.code == 3);
+    assert(strcmp((char*)resp->service.status.message, "Invalid argument") == 0);
+
+    printf("test_error_response_default_message PASSED!\n");
+}
+
+static void test_error_response_custom_message(void) {
+    printf("Running test_error_response_custom_message...\n");
+    memset(&mock_state, 0, sizeof(mock_state));
+    mock_state.force_error_code = 7; // PERMISSION_DENIED
+    strncpy(mock_state.force_custom_msg, "Access denied: admin credentials required", sizeof(mock_state.force_custom_msg) - 1);
+
+    struct windrpc_transaction txn = {
+        .buffer = {
+            .data = shared_buffer,
+            .size = BUFFER_SIZE,
+#if !defined(WINDRPC_USE_INPLACE_BUFFER) || (WINDRPC_USE_INPLACE_BUFFER == 0)
+            .tx_data = shared_tx_buffer,
+            .tx_size = BUFFER_SIZE,
+#endif
+            .bytes_written = 0
+        },
+        .context = {0},
+        .operation = {0}
+    };
+
+    CORE_TYPE(ClientMessage) msg = CORE_INIT(ClientMessage);
+    msg.which_payload = WINDRPC_CLIENT_REQUEST_TAG;
+    CORE_TYPE(Request) *req = &msg.payload.request;
+    SET_REQUEST_ID(req, "tx-err-custom-001");
+    req->which_service = WINDRPC_SERVICE_REQUEST_TAG(power);
+    req->service.power.which_command = WINDRPC_SERVICE_REQUEST_CMD_TAG(power, read_power_info);
+
+    pb_ostream_t ostream = pb_ostream_from_buffer(txn.buffer.data, txn.buffer.size);
+    bool ok = pb_encode(&ostream, WINDRPC_CLIENT_MESSAGE_FIELDS, &msg);
+    assert(ok);
+    txn.buffer.bytes_written = ostream.bytes_written;
+
+    int32_t ret = windrpc_handle(&txn);
+    assert(ret == 0);
+    assert(txn.buffer.bytes_written > 0);
+
+    ok = decode_server_message_safely(&txn, &decode_result.server_msg.payload.response);
+    assert(ok);
+
+    windrpc_response_msg_t *resp = &decode_result.server_msg.payload.response;
+    assert(resp->which_service == WINDRPC_SERVICE_RESPONSE_TAG(status));
+    assert(resp->service.status.code == 7);
+    assert(strcmp((char*)resp->service.status.message, "Access denied: admin credentials required") == 0);
+
+    printf("test_error_response_custom_message PASSED!\n");
+}
+
+static void test_invalid_data_format_error(void) {
+    printf("Running test_invalid_data_format_error...\n");
+
+    struct windrpc_transaction txn = {
+        .buffer = {
+            .data = shared_buffer,
+            .size = BUFFER_SIZE,
+#if !defined(WINDRPC_USE_INPLACE_BUFFER) || (WINDRPC_USE_INPLACE_BUFFER == 0)
+            .tx_data = shared_tx_buffer,
+            .tx_size = BUFFER_SIZE,
+#endif
+            .bytes_written = 0
+        },
+        .context = {0},
+        .operation = {0}
+    };
+
+    uint8_t garbage_data[] = { 0xFF, 0xFF, 0xFF, 0xFF };
+    memcpy(txn.buffer.data, garbage_data, sizeof(garbage_data));
+    txn.buffer.bytes_written = sizeof(garbage_data);
+
+    int32_t ret = windrpc_handle(&txn);
+    assert(ret == 0);
+    assert(txn.buffer.bytes_written > 0);
+
+    bool ok = decode_server_message_safely(&txn, &decode_result.server_msg.payload.response);
+    assert(ok);
+
+    windrpc_response_msg_t *resp = &decode_result.server_msg.payload.response;
+    assert(resp->which_service == WINDRPC_SERVICE_RESPONSE_TAG(status));
+    assert(resp->service.status.code == 17); // INVALID_DATA_FORMAT
+    assert(strlen((char*)resp->service.status.message) > 0);
+
+    printf("test_invalid_data_format_error PASSED!\n");
+}
+
 int main(void) {
     setvbuf(stdout, NULL, _IONBF, 0);
     printf("=== WindRPC Host C Test Started ===\n");
@@ -405,6 +559,10 @@ int main(void) {
     test_read_power_info();
     test_unimplemented_error();
     test_get_device_info();
+    test_windrpc_strerror_mapping();
+    test_error_response_default_message();
+    test_error_response_custom_message();
+    test_invalid_data_format_error();
 
     printf("=== All WindRPC Host C Tests PASSED! ===\n");
     return 0;

@@ -8,18 +8,44 @@ from server import generator as server_generator
 from client import generator as client_generator
 
 
+def _resolve_paths(args):
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    cwd = os.getcwd()
+
+    # Core Spec Path
+    if args.core_spec:
+        if os.path.isabs(args.core_spec):
+            core_spec_path = args.core_spec
+        elif os.path.exists(os.path.join(cwd, args.core_spec)):
+            core_spec_path = os.path.abspath(os.path.join(cwd, args.core_spec))
+        else:
+            core_spec_path = os.path.join(script_dir, args.core_spec)
+    else:
+        local_core = os.path.join(cwd, 'core_spec.yml')
+        if os.path.exists(local_core):
+            core_spec_path = local_core
+        else:
+            core_spec_path = os.path.join(script_dir, 'core_spec.yml')
+
+    # User Spec Path
+    if os.path.isabs(args.user_spec):
+        user_spec_path = args.user_spec
+    else:
+        user_spec_path = os.path.abspath(os.path.join(cwd, args.user_spec))
+
+    # Output Dir
+    if os.path.isabs(args.output):
+        output_dir = args.output
+    else:
+        output_dir = os.path.abspath(os.path.join(cwd, args.output))
+
+    return core_spec_path, user_spec_path, output_dir
+
+
 def handle_proto_command(args):
     """'proto' 서브커맨드를 처리합니다."""
     print("--- Starting Protobuf Generation ---")
-
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-
-    core_spec_path = args.core_spec if os.path.isabs(
-        args.core_spec) else os.path.join(script_dir, args.core_spec)
-    user_spec_path = args.user_spec if os.path.isabs(
-        args.user_spec) else os.path.join(script_dir, args.user_spec)
-    output_dir = args.output if os.path.isabs(
-        args.output) else os.path.join(script_dir, args.output)
+    core_spec_path, user_spec_path, output_dir = _resolve_paths(args)
 
     proto_generator.generate(
         core_spec_path=core_spec_path,
@@ -34,14 +60,7 @@ def handle_proto_command(args):
 def handle_server_command(args):
     """'server' 서브커맨드를 처리합니다."""
     print("--- Starting RPC Server Generation ---")
-
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    core_spec_path = args.core_spec if os.path.isabs(
-        args.core_spec) else os.path.join(script_dir, args.core_spec)
-    user_spec_path = args.user_spec if os.path.isabs(
-        args.user_spec) else os.path.join(script_dir, args.user_spec)
-    output_dir = args.output if os.path.isabs(
-        args.output) else os.path.join(script_dir, args.output)
+    core_spec_path, user_spec_path, output_dir = _resolve_paths(args)
 
     server_generator.generate(
         core_spec_path=core_spec_path,
@@ -56,14 +75,7 @@ def handle_server_command(args):
 def handle_client_command(args):
     """'client' 서브커맨드를 처리합니다."""
     print(f"--- Starting RPC Client Generation ({args.lang}) ---")
-
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    core_spec_path = args.core_spec if os.path.isabs(
-        args.core_spec) else os.path.join(script_dir, args.core_spec)
-    user_spec_path = args.user_spec if os.path.isabs(
-        args.user_spec) else os.path.join(script_dir, args.user_spec)
-    output_dir = args.output if os.path.isabs(
-        args.output) else os.path.join(script_dir, args.output)
+    core_spec_path, user_spec_path, output_dir = _resolve_paths(args)
 
     client_generator.generate(
         core_spec_path=core_spec_path,
@@ -86,7 +98,7 @@ def main():
     proto_parser = subparsers.add_parser(
         'proto', help='Generate .proto files from YAML specifications.')
     proto_parser.add_argument(
-        '-c', '--core-spec', default='core_spec.yml', help='Input core YAML spec file.')
+        '-c', '--core-spec', default=None, help='Input core YAML spec file (optional, defaults to built-in core_spec.yml).')
     proto_parser.add_argument(
         '-s', '--user-spec', default='user_spec.yml', help='Input user-defined YAML spec file.')
     proto_parser.add_argument(
@@ -101,7 +113,7 @@ def main():
     server_parser = subparsers.add_parser(
         'server', help='Generate RPC server C code.')
     server_parser.add_argument(
-        '-c', '--core-spec', default='core_spec.yml', help='Input core YAML spec file.')
+        '-c', '--core-spec', default=None, help='Input core YAML spec file (optional, defaults to built-in core_spec.yml).')
     server_parser.add_argument(
         '-s', '--user-spec', default='user_spec.yml', help='Input user-defined YAML spec file.')
     server_parser.add_argument(
@@ -109,7 +121,7 @@ def main():
     server_parser.add_argument(
         '-m', '--mode', choices=['nested', 'flat'], default=None, help='Envelope mode: flat (default) or nested.')
     server_parser.add_argument(
-        '-r', '--rtos', choices=['zephyr', 'freertos', 'none'], default='zephyr', help='Target RTOS (default: zephyr).')
+        '-r', '--rtos', choices=['zephyr', 'none'], default='zephyr', help='Target RTOS (default: zephyr).')
     server_parser.add_argument(
         '-v', '--verbose', action='store_true', help='Enable verbose output.')
     server_parser.set_defaults(func=handle_server_command)
@@ -118,7 +130,7 @@ def main():
     client_parser = subparsers.add_parser(
         'client', help='Generate RPC client SDK code (e.g. C#).')
     client_parser.add_argument(
-        '-c', '--core-spec', default='core_spec.yml', help='Input core YAML spec file.')
+        '-c', '--core-spec', default=None, help='Input core YAML spec file (optional, defaults to built-in core_spec.yml).')
     client_parser.add_argument(
         '-s', '--user-spec', default='user_spec.yml', help='Input user-defined YAML spec file.')
     client_parser.add_argument(

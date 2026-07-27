@@ -148,38 +148,73 @@ def generate_csharp_client(spec_data, package_name):
                 svc_class_lines.append("")
 
             elif rpc_type == 'REQUEST_ONLY':
-                svc_class_lines.append(f"            public void {rpc_pascal}({cmd_cls} request)")
-                svc_class_lines.append("            {")
-                svc_class_lines.append(f"                _handler.SendRequestNoResponse(RPC_{svc_upper}_{rpc_upper}, request);")
-                svc_class_lines.append("            }")
-                svc_class_lines.append("")
-                if "PixelData" in cmd_cls:
-                    svc_class_lines.append(f"            public void {rpc_pascal}(uint[] colors)")
+                if cmd_cls == "Empty":
+                    svc_class_lines.append(f"            public void {rpc_pascal}(Empty? request = null)")
                     svc_class_lines.append("            {")
-                    svc_class_lines.append(f"                var req = new {cmd_cls}();")
-                    svc_class_lines.append("                foreach (var c in colors) req.Colors.Add(c);")
-                    svc_class_lines.append(f"                {rpc_pascal}(req);")
-                    svc_class_lines.append("            }")
-                    svc_class_lines.append("")
-
-            else: # REQUEST_RESPONSE
-                if res_cls in ['uint32', 'int32', 'bool', 'uint64']:
-                    svc_class_lines.append(f"            public async Task<bool> {rpc_pascal}Async({cmd_cls}? request = null, CancellationToken cancellationToken = default)")
-                    svc_class_lines.append("            {")
-                    svc_class_lines.append("                var req = request ?? new Empty();")
-                    svc_class_lines.append(f"                var packet = await _handler.SendRequestAsync(RPC_{svc_upper}_{rpc_upper}, req, cancellationToken: cancellationToken);")
-                    svc_class_lines.append("                return true;")
+                    svc_class_lines.append(f"                var req = request ?? new Empty();")
+                    svc_class_lines.append(f"                _handler.SendRequestNoResponse(RPC_{svc_upper}_{rpc_upper}, req);")
                     svc_class_lines.append("            }")
                     svc_class_lines.append("")
                 else:
-                    svc_class_lines.append(f"            public async Task<{res_cls}?> {rpc_pascal}Async({cmd_cls}? request = null, CancellationToken cancellationToken = default)")
+                    svc_class_lines.append(f"            public void {rpc_pascal}({cmd_cls} request)")
                     svc_class_lines.append("            {")
-                    svc_class_lines.append("                var req = request ?? new Empty();")
-                    svc_class_lines.append(f"                var packet = await _handler.SendRequestAsync(RPC_{svc_upper}_{rpc_upper}, req, cancellationToken: cancellationToken);")
-                    svc_class_lines.append("                if (packet.Payload == null || packet.Payload.Length == 0) return null;")
-                    svc_class_lines.append(f"                return {res_cls}.Parser.ParseFrom(packet.Payload);")
+                    svc_class_lines.append(f"                _handler.SendRequestNoResponse(RPC_{svc_upper}_{rpc_upper}, request);")
                     svc_class_lines.append("            }")
                     svc_class_lines.append("")
+                    if "PixelData" in cmd_cls:
+                        svc_class_lines.append(f"            public void {rpc_pascal}(uint[] colors)")
+                        svc_class_lines.append("            {")
+                        svc_class_lines.append(f"                var req = new {cmd_cls}();")
+                        svc_class_lines.append("                foreach (var c in colors) req.Colors.Add(c);")
+                        svc_class_lines.append(f"                {rpc_pascal}(req);")
+                        svc_class_lines.append("            }")
+                        svc_class_lines.append("")
+
+            else: # REQUEST_RESPONSE
+                if res_cls in ['uint32', 'int32', 'bool', 'uint64']:
+                    if cmd_cls == "Empty":
+                        svc_class_lines.append(f"            public async Task<bool> {rpc_pascal}Async(Empty? request = null, CancellationToken cancellationToken = default)")
+                        svc_class_lines.append("            {")
+                        svc_class_lines.append("                var req = request ?? new Empty();")
+                        svc_class_lines.append(f"                var packet = await _handler.SendRequestAsync(RPC_{svc_upper}_{rpc_upper}, req, cancellationToken: cancellationToken);")
+                        svc_class_lines.append("                return true;")
+                        svc_class_lines.append("            }")
+                        svc_class_lines.append("")
+                        svc_class_lines.append(f"            public async Task<bool> {rpc_pascal}Async(CancellationToken cancellationToken)")
+                        svc_class_lines.append("            {")
+                        svc_class_lines.append(f"                return await {rpc_pascal}Async(null, cancellationToken);")
+                        svc_class_lines.append("            }")
+                        svc_class_lines.append("")
+                    else:
+                        svc_class_lines.append(f"            public async Task<bool> {rpc_pascal}Async({cmd_cls} request, CancellationToken cancellationToken = default)")
+                        svc_class_lines.append("            {")
+                        svc_class_lines.append(f"                var packet = await _handler.SendRequestAsync(RPC_{svc_upper}_{rpc_upper}, request, cancellationToken: cancellationToken);")
+                        svc_class_lines.append("                return true;")
+                        svc_class_lines.append("            }")
+                        svc_class_lines.append("")
+                else:
+                    if cmd_cls == "Empty":
+                        svc_class_lines.append(f"            public async Task<{res_cls}?> {rpc_pascal}Async(Empty? request = null, CancellationToken cancellationToken = default)")
+                        svc_class_lines.append("            {")
+                        svc_class_lines.append("                var req = request ?? new Empty();")
+                        svc_class_lines.append(f"                var packet = await _handler.SendRequestAsync(RPC_{svc_upper}_{rpc_upper}, req, cancellationToken: cancellationToken);")
+                        svc_class_lines.append("                if (packet.Payload == null || packet.Payload.Length == 0) return null;")
+                        svc_class_lines.append(f"                return {res_cls}.Parser.ParseFrom(packet.Payload);")
+                        svc_class_lines.append("            }")
+                        svc_class_lines.append("")
+                        svc_class_lines.append(f"            public async Task<{res_cls}?> {rpc_pascal}Async(CancellationToken cancellationToken)")
+                        svc_class_lines.append("            {")
+                        svc_class_lines.append(f"                return await {rpc_pascal}Async(null, cancellationToken);")
+                        svc_class_lines.append("            }")
+                        svc_class_lines.append("")
+                    else:
+                        svc_class_lines.append(f"            public async Task<{res_cls}?> {rpc_pascal}Async({cmd_cls} request, CancellationToken cancellationToken = default)")
+                        svc_class_lines.append("            {")
+                        svc_class_lines.append(f"                var packet = await _handler.SendRequestAsync(RPC_{svc_upper}_{rpc_upper}, request, cancellationToken: cancellationToken);")
+                        svc_class_lines.append("                if (packet.Payload == null || packet.Payload.Length == 0) return null;")
+                        svc_class_lines.append(f"                return {res_cls}.Parser.ParseFrom(packet.Payload);")
+                        svc_class_lines.append("            }")
+                        svc_class_lines.append("")
 
         svc_class_lines.append("        }")
         svc_class_lines.append("")

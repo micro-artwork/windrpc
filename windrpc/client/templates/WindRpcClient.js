@@ -17,7 +17,6 @@ export class WindRpcClient {
     constructor() {
         this.seqId = 0;
         this._pendingRequests = new Map();
-        this._rxBuffer = [];
 // --WINDRPC_SUB_CLIENT_INIT
     }
 
@@ -27,8 +26,12 @@ export class WindRpcClient {
     }
 
     /**
-     * Builds a raw WindRPC COBS frame.
-     * Frame format: COBS(RPC_ID[2] + SEQ_ID[2] + PAYLOAD_LEN[1] + PAYLOAD) + 0x00
+     * Builds a COBS-framed WindRPC binary packet ready to send over serial.
+     * Raw Frame format: RPC_ID[2] + SEQ_ID[2] + PAYLOAD_LEN[1] + PAYLOAD
+     * Output: COBS_ENCODED_BYTES + 0x00
+     * @param {number} rpcId - 16-bit combined RPC ID
+     * @param {Uint8Array} payloadBytes - encoded Protobuf payload
+     * @returns {Uint8Array} COBS-framed binary packet
      */
     buildFrame(rpcId, payloadBytes = new Uint8Array(0)) {
         const seqId = this.getNextSeqId();
@@ -45,30 +48,40 @@ export class WindRpcClient {
         if (payloadLen > 0) rawPacket.set(payloadBytes, 5);
 
         const encoded = cobsEncode(rawPacket);
-        const frame = new Uint8Array(encoded.length + 1);
-        frame.set(encoded, 0);
-        frame[encoded.length] = 0x00;
-        return frame;
+        const framed = new Uint8Array(encoded.length + 1);
+        framed.set(encoded, 0);
+        framed[encoded.length] = 0;
+        return framed;
     }
 
     /**
-     * Feed received serial bytes into the RX state machine.
-     * Splits on 0x00 delimiter, COBS-decodes, dispatches responses/notifications.
-     * @param {Uint8Array|number[]} data - raw bytes from serial port
+     * Alias for receiveFrame for streaming/serial byte reception.
+     */
+    receiveBytes(bytes, onNotification) {
+        this.receiveFrame(bytes, onNotification);
+    }
+
+    /**
+     * Feed a received raw WindRPC frame into the RX state machine.
+     * Decodes COBS if necessary before dispatching.
+     * @param {Uint8Array} frame - raw binary frame packet
      * @param {function} onNotification - called with {rpcId, seqId, payload}
      */
-    receiveBytes(data, onNotification) {
-        for (const byte of data) {
-            if (byte === 0x00) {
-                if (this._rxBuffer.length > 0) {
-                    const decoded = cobsDecode(new Uint8Array(this._rxBuffer));
-                    this._rxBuffer = [];
-                    this._dispatchFrame(decoded, onNotification);
-                }
-            } else {
-                this._rxBuffer.push(byte);
+    receiveFrame(frame, onNotification) {
+        if (!frame) return;
+        const bytes = Uint8Array.from(frame);
+        if (bytes.length < 5) return;
+        let unencoded = bytes;
+        try {
+            const cleanBytes = (bytes[bytes.length - 1] === 0) ? bytes.subarray(0, bytes.length - 1) : bytes;
+            const decoded = cobsDecode(cleanBytes);
+            if (decoded && decoded.length >= 5) {
+                unencoded = decoded;
             }
+        } catch (e) {
+            // fallback to raw frame if already decoded
         }
+        this._dispatchFrame(unencoded, onNotification);
     }
 
     _dispatchFrame(decoded, onNotification) {
@@ -81,7 +94,16 @@ export class WindRpcClient {
         const pending = this._pendingRequests.get(seqId);
         if (pending) {
             this._pendingRequests.delete(seqId);
-            pending.resolve({ rpcId, seqId, payload });
+            if (rpcId === 0x0000) {
+                try {
+                    const status = (typeof decodeStatus === 'function') ? decodeStatus(payload) : { code: -1, message: 'Server error' };
+                    pending.reject(new Error(`[WindRPC Status Error ${status.code}] ${status.message || 'Server error'}`));
+                } catch (err) {
+                    pending.reject(new Error(`[WindRPC Status Error] Unknown server error (rpcId=0x0000)`));
+                }
+            } else {
+                pending.resolve({ rpcId, seqId, payload });
+            }
             return;
         }
 

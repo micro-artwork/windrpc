@@ -37,12 +37,12 @@ def main():
     if not run_step("Python Validator Tests", py_test_cmd, cwd=root_dir):
         sys.exit(1)
 
-    # 2단계: 코드 제너레이션 테스트
-    print_banner("Step 2: Auto-Generating Proto & C Server Code")
-    # 기존 생성 폴더 정리
-    if os.path.exists(gen_dir):
-        shutil.rmtree(gen_dir)
-    os.makedirs(gen_dir, exist_ok=True)
+    # 2단계: 코드 제너레이션 테스트 (Flat Mode)
+    print_banner("Step 2: Auto-Generating Flat Proto & C Server Code")
+    flat_gen_dir = os.path.join(root_dir, "tests", "generated_flat")
+    if os.path.exists(flat_gen_dir):
+        shutil.rmtree(flat_gen_dir)
+    os.makedirs(flat_gen_dir, exist_ok=True)
 
     spec_path = os.path.join(root_dir, "tests", "test_spec.yml")
     
@@ -56,22 +56,6 @@ def main():
         yaml.dump(spec_data, f, sort_keys=False)
     print(f"  - Applied random package name for unit test: '{random_package}'")
     
-    # 2.1 proto 생성 (Nested Mode)
-    gen_proto_cmd = [sys.executable, "windrpc/windrpc_gen.py", "proto", "-s", spec_path, "-o", gen_dir, "-m", "nested"]
-    if not run_step("Generating Proto Files (Nested)", gen_proto_cmd, cwd=root_dir):
-        sys.exit(1)
-        
-    # 2.2 server c 코드 생성 (Nested Mode)
-    gen_server_cmd = [sys.executable, "windrpc/windrpc_gen.py", "server", "-s", spec_path, "-o", gen_dir, "-m", "nested"]
-    if not run_step("Generating C Server Code (Nested)", gen_server_cmd, cwd=root_dir):
-        sys.exit(1)
-
-    # 2.3 Flat Mode 생성
-    flat_gen_dir = os.path.join(root_dir, "tests", "generated_flat")
-    if os.path.exists(flat_gen_dir):
-        shutil.rmtree(flat_gen_dir)
-    os.makedirs(flat_gen_dir, exist_ok=True)
-
     gen_proto_flat_cmd = [sys.executable, "windrpc/windrpc_gen.py", "proto", "-s", spec_path, "-o", flat_gen_dir, "-m", "flat"]
     if not run_step("Generating Flat Proto Files", gen_proto_flat_cmd, cwd=root_dir):
         sys.exit(1)
@@ -80,98 +64,82 @@ def main():
     if not run_step("Generating C Server Code (Flat)", gen_server_flat_cmd, cwd=root_dir):
         sys.exit(1)
 
-    # 2.4 테스트용 windrpc_config.h 수정 (request_id 활성화)
-    config_path = os.path.join(gen_dir, "windrpc_config.h")
-    if os.path.exists(config_path):
-        with open(config_path, "r", encoding="utf-8") as f:
-            content = f.read()
-        content = content.replace("WINDRPC_REQUEST_ID_TYPE_NONE", "WINDRPC_REQUEST_ID_TYPE_BYTES")
-        with open(config_path, "w", encoding="utf-8") as f:
-            f.write(content)
-        print("  - Updated windrpc_config.h to enable request_id validation.")
-
-    # CMakeCache.txt 삭제하여 캐시 꼬임 예방 (Windows .git 권한 에러 우회용 Clean Build)
-    cache_path = os.path.join(build_dir, "CMakeCache.txt")
-    if os.path.exists(cache_path):
-        try:
-            os.remove(cache_path)
-            print("  - Removed CMakeCache.txt to enforce clean compilation.")
-        except Exception as e:
-            print(f"  - Warning: Could not remove CMakeCache.txt: {e}")
-
-    # 3단계: PC 호스트 컴파일 (CMake)
-    print_banner("Step 3: Compiling C Host Tests")
-    # 기존 빌드 폴더가 존재하면 덮어쓰기 형태로 실행 (Windows .git 권한 에러 회피)
-    os.makedirs(build_dir, exist_ok=True)
-
-    # 3.1 CMake Configure
-    cmake_conf_cmd = ["cmake", "-B", "build", "-S", "."]
-    if not run_step("CMake Configure", cmake_conf_cmd, cwd=os.path.join(root_dir, "tests")):
-        sys.exit(1)
-
-    # 3.2 CMake Build
-    cmake_build_cmd = ["cmake", "--build", "build"]
-    if not run_step("CMake Build", cmake_build_cmd, cwd=os.path.join(root_dir, "tests")):
-        sys.exit(1)
-
-    # 4단계: C 테스트 바이너리 실행
-    print_banner("Step 4: Executing C Host Unit Tests")
-    
-    # MSVC, MinGW, Makefiles 등 컴파일러/플랫폼에 따라 바이너리 생성 위치가 다를 수 있으므로 검색함
-    search_pattern = os.path.join(build_dir, "**", "run_tests.exe")
-    found_binaries = glob.glob(search_pattern, recursive=True)
-    
-    # Unix 계열도 대응할 수 있도록 확장자 없는 경우 추가 매칭
-    if not found_binaries:
-        search_pattern_unix = os.path.join(build_dir, "**", "run_tests")
-        found_binaries = glob.glob(search_pattern_unix, recursive=True)
-
-    if not found_binaries:
-        print("!! Error: C Test executable 'run_tests' not found in build directory.")
-        sys.exit(1)
-
-    test_bin_path = found_binaries[0]
-    print(f"Found test executable: {test_bin_path}")
-
-    # 바이너리 실행
-    # 5단계: Flat 모드 및 C# 클라이언트 제너레이터 검증
-    print_banner("Step 5: Testing Flat Envelope Mode & C# Client Generation")
-    flat_gen_dir = os.path.join(root_dir, "tests", "generated_flat")
-    if os.path.exists(flat_gen_dir):
-        shutil.rmtree(flat_gen_dir)
-    os.makedirs(flat_gen_dir, exist_ok=True)
-
-    gen_proto_flat_cmd = [sys.executable, "windrpc/windrpc_gen.py", "proto", "-s", spec_path, "-o", flat_gen_dir, "-m", "flat"]
-    if not run_step("Generating Flat Proto Files", gen_proto_flat_cmd, cwd=root_dir):
-        sys.exit(1)
-
-    gen_server_flat_cmd = [sys.executable, "windrpc/windrpc_gen.py", "server", "-s", spec_path, "-o", flat_gen_dir, "-m", "flat"]
-    if not run_step("Generating Flat C Server Code", gen_server_flat_cmd, cwd=root_dir):
-        sys.exit(1)
-
-    gen_client_cs_cmd = [sys.executable, "windrpc/windrpc_gen.py", "client", "-s", spec_path, "-o", flat_gen_dir, "--lang", "csharp"]
-    if not run_step("Generating C# Client SDK", gen_client_cs_cmd, cwd=root_dir):
-        sys.exit(1)
-
-    cs_file = os.path.join(flat_gen_dir, "WindRpcClient.cs")
-    if not os.path.exists(cs_file):
-        print(f"!! Error: Expected C# client file '{cs_file}' was not generated.")
-        sys.exit(1)
-    print(f"  - Successfully verified generated C# client file: '{cs_file}'")
-
-    # Flat C Server Code CMake Compile Test
+    # 3단계: PC 호스트 컴파일 (CMake - Flat Mode)
+    print_banner("Step 3: Compiling Flat C Host Tests")
     build_flat_dir = os.path.join(root_dir, "tests", "build_flat")
     os.makedirs(build_flat_dir, exist_ok=True)
-    cmake_conf_flat_cmd = ["cmake", "-B", "build_flat", "-S", ".", "-DUSE_FLAT_MODE=ON"]
+
+    cmake_gen_args = []
+    if sys.platform == "win32" and shutil.which("gcc"):
+        cmake_gen_args = ["-G", "MinGW Makefiles"]
+
+    cmake_conf_flat_cmd = ["cmake"] + cmake_gen_args + ["-B", "build_flat", "-S", ".", "-DUSE_FLAT_MODE=ON"]
     if not run_step("CMake Configure (Flat Mode)", cmake_conf_flat_cmd, cwd=os.path.join(root_dir, "tests")):
         sys.exit(1)
 
     cmake_build_flat_cmd = ["cmake", "--build", "build_flat"]
     if not run_step("CMake Build (Flat Mode)", cmake_build_flat_cmd, cwd=os.path.join(root_dir, "tests")):
         sys.exit(1)
-    print("  - Successfully compiled Flat C Server Code with CMake!")
 
-    print_banner("ALL TESTS PASSED SUCCESSFULLY!")
+    # 4단계: C 테스트 바이너리 실행
+    print_banner("Step 4: Executing Flat C Host Unit Tests")
+    
+    search_pattern = os.path.join(build_flat_dir, "**", "run_tests.exe")
+    found_binaries = glob.glob(search_pattern, recursive=True)
+    if not found_binaries:
+        search_pattern_unix = os.path.join(build_flat_dir, "**", "run_tests")
+        found_binaries = glob.glob(search_pattern_unix, recursive=True)
+
+    if not found_binaries:
+        print("!! Error: Flat C Test executable 'run_tests' not found in build directory.")
+        sys.exit(1)
+
+    test_bin_path = found_binaries[0]
+    print(f"Found test executable: {test_bin_path}")
+
+    if not run_step("Execute Flat C Test Binary", [test_bin_path], cwd=os.path.dirname(test_bin_path)):
+        sys.exit(1)
+
+    # 5단계: JS 클라이언트 SDK 생성 및 Node.js 유닛/통합 테스트
+    print_banner("Step 5: Testing JS Client SDK with Node.js")
+    gen_js_dir = os.path.join(root_dir, "tests", "generated_js")
+    if os.path.exists(gen_js_dir):
+        shutil.rmtree(gen_js_dir)
+    os.makedirs(gen_js_dir, exist_ok=True)
+
+    gen_client_js_cmd = [sys.executable, "windrpc/windrpc_gen.py", "client", "-s", spec_path, "-o", gen_js_dir, "--lang", "js"]
+    if not run_step("Generating JS Client SDK", gen_client_js_cmd, cwd=root_dir):
+        sys.exit(1)
+
+    node_bin = shutil.which("node")
+    if node_bin:
+        node_test_cmd = [node_bin, "tests/test_js_client.mjs"]
+        if not run_step("Executing JS Client Unit Tests (Node.js)", node_test_cmd, cwd=root_dir):
+            sys.exit(1)
+    else:
+        print("  - Warning: 'node' executable not found. Skipping Node.js JS test.")
+
+    # 6단계: C# 클라이언트 SDK dotnet 빌드 및 실행 검증
+    print_banner("Step 6: Testing C# Client SDK Compilation with dotnet")
+    csharp_project = os.path.abspath(os.path.join(root_dir, "..", "c#", "HilightBoxWInForm", "HilightBox.csproj"))
+    csharp_out_dir = os.path.join(os.path.dirname(csharp_project), "Communication", "WindRpc")
+    if os.path.exists(csharp_out_dir):
+        shutil.rmtree(csharp_out_dir)
+    os.makedirs(csharp_out_dir, exist_ok=True)
+
+    gen_client_cs_cmd = [sys.executable, "windrpc/windrpc_gen.py", "client", "-s", spec_path, "-o", csharp_out_dir, "--lang", "csharp"]
+    if not run_step("Generating C# Client SDK", gen_client_cs_cmd, cwd=root_dir):
+        sys.exit(1)
+
+    dotnet_bin = shutil.which("dotnet")
+    if dotnet_bin and os.path.exists(csharp_project):
+        dotnet_cmd = [dotnet_bin, "build", csharp_project]
+        if not run_step("Executing C# Client Build (dotnet)", dotnet_cmd, cwd=root_dir):
+            sys.exit(1)
+    else:
+        print("  - Warning: 'dotnet' executable or C# project not found. Skipping C# dotnet test.")
+
+    print_banner("ALL WINDRPC INTEGRATED TESTS PASSED SUCCESSFULLY! 🚀")
 
 if __name__ == "__main__":
     main()

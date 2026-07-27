@@ -1,100 +1,58 @@
 /**
  * @file windrpc_handler.c
- * @brief Auto-generated Server Handler Runner Skeleton for WindRPC (--WINDRPC_RTOS_NAME).
- * @note Adapt and incorporate this file into your RTOS task scheduler.
+ * @brief Pure Transport-Agnostic Core Framework Adapter for WindRPC.
  */
 
 #include "windrpc.h"
-#include <zephyr/kernel.h>
-#include <zephyr/logging/log.h>
+#include <stdint.h>
 #include <stdio.h>
-
-LOG_MODULE_REGISTER(windrpc_handler, LOG_LEVEL_INF);
+#include <string.h>
 
 // --WINDRPC_STACK_AND_BUFFER_DEFINES
 
-#if defined(CONFIG_ZEPHYR_RTOS) || defined(__ZEPHYR__)
-
 /* ========================================================================== */
-/*                      Zephyr RTOS Thread & Queue Definitions                */
+/*               Transport-Agnostic Raw Packet Processing Adapter             */
 /* ========================================================================== */
-
-struct rpc_rx_frame {
-    uint16_t len;
-    uint8_t data[WINDRPC_MAX_BUFFER_SIZE];
-};
-
-K_MSGQ_DEFINE(rpc_rx_msgq, sizeof(struct rpc_rx_frame), 5, 4);
 
 /**
- * @brief Main RPC Handler Thread. Receives data from queue, decodes COBS,
- *        executes flat RPC commands, and dispatches responses.
+ * @brief Feeds a raw, unencoded RPC binary packet (already decoded from transport framing like COBS/GATT)
+ *        directly into WindRPC engine, executes RPC handler, and outputs unencoded response packet.
+ *
+ * @param rx_packet Raw unencoded RPC packet bytes [RPC_ID (2B) | SEQ_ID (2B) | LEN (1B) | PAYLOAD]
+ * @param rx_len Byte length of rx_packet
+ * @param type Transport type source / identifier
+ * @param out_resp_buf Buffer to store raw unencoded response packet (if generated)
+ * @param max_resp_len Capacity of out_resp_buf
+ * @param out_resp_len Out parameter receiving actual response byte length (0 if no response)
+ * @return 0 on successful processing, negative error code on failure
  */
-void rpc_handler_thread(void *p1, void *p2, void *p3) {
-    ARG_UNUSED(p1); ARG_UNUSED(p2); ARG_UNUSED(p3);
+int32_t windrpc_process_packet(const uint8_t *rx_packet, uint16_t rx_len, uint32_t transport_id,
+			      uint8_t *out_resp_buf, uint16_t max_resp_len, uint16_t *out_resp_len)
+{
+	if (!rx_packet || rx_len < 5) {
+		if (out_resp_len) *out_resp_len = 0;
+		return -1;
+	}
 
-    static uint8_t rx_raw_buf[WINDRPC_MAX_BUFFER_SIZE];
-    static uint8_t tx_raw_buf[WINDRPC_MAX_BUFFER_SIZE];
-    static struct rpc_rx_frame frame;
+	static uint8_t tx_raw_buf[WINDRPC_MAX_BUFFER_SIZE];
 
-    static struct windrpc_transaction txn = {
-        .buffer = {
-            .data = rx_raw_buf,
-            .size = sizeof(rx_raw_buf),
-            .bytes_written = 0,
-            .tx_data = tx_raw_buf,
-            .tx_size = sizeof(tx_raw_buf)
-        },
-        .context = {0}
-    };
+	struct windrpc_transaction txn;
+	memset(&txn, 0, sizeof(txn));
+	txn.buffer.data = (uint8_t *)rx_packet;
+	txn.buffer.size = rx_len;
+	txn.buffer.bytes_written = rx_len;
+	txn.buffer.tx_data = tx_raw_buf;
+	txn.buffer.tx_size = sizeof(tx_raw_buf);
 
-    static struct windrpc_device_info device_info = {
-        .serial_number = "WINDRPC-ZEPHYR-001" // TODO: Set your hardware UID string here
-    };
+	int32_t err = windrpc_handle(&txn);
 
-    windrpc_init(&device_info);
-    LOG_INF("WindRPC Zephyr Handler Thread Started (Stack: %d B, Buffer: %d B)",
-            WINDRPC_RECOMMENDED_STACK_SIZE, WINDRPC_MAX_BUFFER_SIZE);
+	if (!err && txn.buffer.bytes_written > 0 && out_resp_buf && out_resp_len) {
+		uint16_t copy_len = (txn.buffer.bytes_written < max_resp_len) ? txn.buffer.bytes_written : max_resp_len;
+		memcpy(out_resp_buf, txn.buffer.tx_data, copy_len);
+		*out_resp_len = copy_len;
+	} else if (out_resp_len) {
+		*out_resp_len = 0;
+	}
 
-    while (1) {
-        // 1. Wait for RX Frame from Communication Driver (UART/CDC/BLE)
-        if (k_msgq_get(&rpc_rx_msgq, &frame, K_FOREVER) != 0) {
-            continue;
-        }
-
-        // TODO: Perform COBS decoding from frame.data into txn.buffer.data
-        // uint16_t decoded_len = cobs_decode(txn.buffer.data, frame.data, frame.len);
-        // txn.buffer.bytes_written = decoded_len;
-
-        LOG_DBG("[RX] Received RPC Frame (Len: %u)", frame.len);
-
-        // 2. Execute RPC Transaction
-        int32_t err = windrpc_handle(&txn);
-
-        // 3. Dispatch Response if generated
-        if (!err && txn.buffer.bytes_written > 0) {
-            LOG_DBG("[TX] Sending Response Frame (Len: %u)", txn.buffer.bytes_written);
-            // TODO: COBS encode txn.buffer.tx_data and send to UART/USB TX driver
-            // dispatch_tx_message(txn.buffer.tx_data, txn.buffer.bytes_written);
-        }
-    }
+	return err;
 }
-
-K_THREAD_DEFINE(rpc_handler_tid, WINDRPC_RECOMMENDED_STACK_SIZE,
-                rpc_handler_thread, NULL, NULL, NULL,
-                7, 0, 0);
-
-#else
-
-/* ========================================================================== */
-/*                      Generic / FreeRTOS Skeleton Fallback                  */
-/* ========================================================================== */
-
-void rpc_handler_thread(void *arg) {
-    LOG_INF("WindRPC Generic Handler Started");
-    while (1) {
-        // Generic handler loop implementation
-    }
-}
-
-#endif

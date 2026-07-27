@@ -95,10 +95,10 @@ def _get_rpc_types(rpc, service_name, package_name):
         cmd_raw_msg = "Subscribe"
         cmd_c_type = "rpc_types_Subscribe_t"
         res_raw_pkg = "types"
-        res_raw_msg = "Empty"
-        res_c_type = "void"
+        res_raw_msg = "Status"
+        res_c_type = "rpc_types_Status_t"
         is_submsg = True
-        res_fields = f"{prefix}_windrpc_types_Empty_fields"
+        res_fields = f"{prefix}_windrpc_types_Status_fields"
         res_tag = f"WINDRPC_SERVICE_RESPONSE_RESULT_TAG({service_name}, {sub_name})"
 
     return {
@@ -174,7 +174,7 @@ def _generate_dispatch_table(spec_data, package_name):
             if info['rpc_type'] == 'NOTIFICATION':
                 rpc_name = f"subscribe_{rpc_name}"
 
-            exec_func = f"execute_{rpc_name}"
+            exec_func = f"windrpc_on_{rpc_name}"
 
             if info['res_type'] == 'void':
                 fw_decls.append(f"int32_t {exec_func}(const {info['cmd_type']} *req, void *context);\n")
@@ -290,13 +290,32 @@ def _generate_get_command_tag_and_index_funcs(spec_data, package_name):
     return "".join(content)
 
 
+def _generate_rpc_event_enum(spec_data):
+    services = spec_data.get('services', [])
+    content = []
+    content.append("\n// Auto-generated WindRPC Event Enum & Event Flags\n")
+    content.append("typedef enum {\n")
+    events_found = 0
+    for service in services:
+        svc_name = service['name']
+        for rpc in service.get('rpcs', []):
+            if rpc.get('type', '').upper() == 'NOTIFICATION':
+                rpc_name = rpc['name']
+                event_enum = f"WINDRPC_EVENT_{rpc_name.upper()}"
+                content.append(f"    {event_enum} = {events_found},\n")
+                events_found += 1
+    content.append(f"    WINDRPC_EVENT_COUNT = {events_found}\n")
+    content.append("} windrpc_event_t;\n\n")
+    content.append("#ifndef WINDRPC_EVENT_FLAG\n")
+    content.append("#define WINDRPC_EVENT_FLAG(x) (1U << (x))\n")
+    content.append("#endif\n\n")
+    return "".join(content)
+
+
 def _generate_common_header_content(spec_data, package_name):
     file_path = _get_template_file_path('windrpc_common.h')
     cmd_dict = _get_service_commands(spec_data)
-    header_paths = [
-        f'#include "{package_name}/windrpc/core/windrpc.pb.h"\n',
-        f'#include "{package_name}/windrpc/types/types.pb.h"\n'
-    ]
+    header_paths = []
     for svc_name in cmd_dict:
         header_paths.append(
             f'#include "{package_name}/windrpc/service/{svc_name}.pb.h"\n')
@@ -317,6 +336,7 @@ def _generate_common_header_content(spec_data, package_name):
             elif '--WINDRPC_RPC_INDEX_ENUM' in line:
                 content.append(line)
                 content.append(_generate_rpc_index_enum(spec_data))
+                content.append(_generate_rpc_event_enum(spec_data))
             else:
                 content.append(line)
     except FileNotFoundError:
@@ -387,8 +407,8 @@ def _generate_flat_dispatch_table(spec_data, package_name):
     content = []
 
     content.append("// Core service handler prototypes for flat mode\n")
-    content.append("int32_t execute_ping(const void *req, uint32_t *res, void *context);\n")
-    content.append("int32_t execute_get_device_info(const void *req, rpc_common_DeviceInfo_t *res, void *context);\n\n")
+    content.append("int32_t windrpc_on_ping(const void *req, uint32_t *res, void *context);\n")
+    content.append("int32_t windrpc_on_get_device_info(const void *req, rpc_common_DeviceInfo_t *res, void *context);\n\n")
 
     content.append("// Service RPC handler prototypes for flat mode\n")
     for service in services:
@@ -400,25 +420,24 @@ def _generate_flat_dispatch_table(spec_data, package_name):
             info = _get_rpc_types(rpc, svc_name, package_name)
             cmd_arg = f"const {info['cmd_type']} *req" if info['cmd_type'] != 'void' else "const void *req"
             res_arg = f"{info['res_type']} *res" if info['res_type'] != 'void' else "void *res"
-            exec_name = f"execute_subscribe_{rpc_name}" if info['rpc_type'] == 'NOTIFICATION' else f"execute_{rpc_name}"
+            exec_name = f"windrpc_on_subscribe_{rpc_name}" if info['rpc_type'] == 'NOTIFICATION' else f"windrpc_on_{rpc_name}"
             content.append(f"int32_t {exec_name}({cmd_arg}, {res_arg}, void *context);\n")
 
     content.append("\n// Flat req/res static buffers\n")
+    content.append("static uint32_t res_common_ping;\n")
     for service in services:
         svc_name = service['name']
-        if svc_name == 'common':  # already hardcoded above
+        if svc_name == 'common':  # handled by core
             continue
+        svc_id = service['id']
         for rpc in service.get('rpcs', []):
-            rpc_name = rpc['name']
             info = _get_rpc_types(rpc, svc_name, package_name)
-            has_response = info['rpc_type'] in ('REQUEST_RESPONSE', 'NOTIFICATION')
             cmd_type = info['cmd_type']
+            res_type = info['res_type']
             if cmd_type != 'void':
-                content.append(f"static {cmd_type} req_{svc_name}_{rpc_name};\n")
-            if has_response:
-                res_type = info['res_type']
-                if res_type != 'void':
-                    content.append(f"static {res_type} res_{svc_name}_{rpc_name};\n")
+                content.append(f"static {cmd_type} req_{svc_name}_{rpc['name']};\n")
+            if res_type != 'void':
+                content.append(f"static {res_type} res_{svc_name}_{rpc['name']};\n")
 
     content.append("\n")
 
@@ -436,12 +455,16 @@ def _generate_flat_dispatch_table(spec_data, package_name):
             info = _get_rpc_types(rpc, svc_name, package_name)
             if info['cmd_type'] != 'void':
                 content.append(f"        case 0x{combined_id:04X}:\n")
+                content.append(f"            memset(&req_{svc_name}_{rpc_name}, 0, sizeof(req_{svc_name}_{rpc_name}));\n")
                 content.append(f"            return &req_{svc_name}_{rpc_name};\n")
     content.append("        default: return NULL;\n")
     content.append("    }\n}\n\n")
 
     content.append("static void *windrpc_get_flat_res_struct(uint16_t rpc_id) {\n")
     content.append("    switch (rpc_id) {\n")
+    content.append("        case 0x0601:\n")
+    content.append("            res_common_ping = 0;\n")
+    content.append("            return &res_common_ping;\n")
     for service in services:
         svc_name = service['name']
         if svc_name == 'common':  # handled by core
@@ -456,6 +479,7 @@ def _generate_flat_dispatch_table(spec_data, package_name):
             rpc_id = rpc['id']
             combined_id = (svc_id << 8) | rpc_id
             content.append(f"        case 0x{combined_id:04X}:\n")
+            content.append(f"            memset(&res_{svc_name}_{rpc_name}, 0, sizeof(res_{svc_name}_{rpc_name}));\n")
             content.append(f"            return &res_{svc_name}_{rpc_name};\n")
     content.append("        default: return NULL;\n")
     content.append("    }\n}\n\n")
@@ -463,14 +487,14 @@ def _generate_flat_dispatch_table(spec_data, package_name):
     content.append("static const struct windrpc_handler_entry windrpc_dispatch_table[] = {\n")
     content.append("    {\n")
     content.append("        .rpc_id = 0x0601,\n")
-    content.append("        .execute = (int32_t (*)(const void *, void *, void *))execute_ping,\n")
+    content.append("        .execute = (int32_t (*)(const void *, void *, void *))windrpc_on_ping,\n")
     content.append("        .has_response = true,\n")
     content.append(f"        .req_fields = {prefix}_windrpc_types_Empty_fields,\n")
     content.append("        .res_fields = NULL\n")
     content.append("    },\n")
     content.append("    {\n")
     content.append("        .rpc_id = 0x0602,\n")
-    content.append("        .execute = (int32_t (*)(const void *, void *, void *))execute_get_device_info,\n")
+    content.append("        .execute = (int32_t (*)(const void *, void *, void *))windrpc_on_get_device_info,\n")
     content.append("        .has_response = true,\n")
     content.append(f"        .req_fields = {prefix}_windrpc_types_Empty_fields,\n")
     content.append(f"        .res_fields = {prefix}_windrpc_service_common_DeviceInfo_fields\n")
@@ -507,7 +531,7 @@ def _generate_flat_dispatch_table(spec_data, package_name):
             else:
                 res_fields = "NULL"
 
-            exec_name = f"execute_subscribe_{rpc_name}" if info['rpc_type'] == 'NOTIFICATION' else f"execute_{rpc_name}"
+            exec_name = f"windrpc_on_subscribe_{rpc_name}" if info['rpc_type'] == 'NOTIFICATION' else f"windrpc_on_{rpc_name}"
 
             content.append("    {\n")
             content.append(f"        .rpc_id = 0x{combined_id:04X},\n")
@@ -600,7 +624,7 @@ def write_smart_merge(file_path, new_content):
 
         key_token = None
         for token in tokens:
-            if token.startswith('execute_') or token.startswith('rpc_notify_') or token.startswith('rpc_encode_notify_') or token.endswith('_service') or token == 'windrpc_services' or token.startswith('rpc_'):
+            if token.startswith('windrpc_on_') or token.startswith('windrpc_notify_') or token.endswith('_service') or token == 'windrpc_services' or token.startswith('rpc_'):
                 key_token = token
                 break
 
@@ -663,18 +687,18 @@ def _generate_callbacks_skeleton(spec_data, package_name):
                 content.append(f"/**\n")
                 content.append(f" * @brief Execute handler for subscribing to {rpc_name}\n")
                 content.append(f" */\n")
-                content.append(f"int32_t execute_{sub_name}(const rpc_types_Subscribe_t *req, void *res, void *context) {{\n")
+                content.append(f"int32_t windrpc_on_{sub_name}(const rpc_types_Subscribe_t *req, void *res, void *context) {{\n")
                 content.append(f"    ARG_UNUSED(res);\n")
                 content.append(f"    LOG_INF(\"Execute subscription: {sub_name}, enable=%d\", req ? req->enable : 0);\n")
                 content.append(f"    // [USER TODO]: Implement subscription enable/disable logic based on req->enable\n")
-                content.append(f"    // Example: if (req->enable) rpc_set_notif_event(...);\n")
+                content.append(f"    // Example: if (req->enable) windrpc_notify_{rpc_name}(...);\n")
                 content.append(f"    return 0;\n")
                 content.append(f"}}\n\n")
             elif info['rpc_type'] == 'REQUEST_ONLY':
                 content.append(f"/**\n")
                 content.append(f" * @brief Execute handler for RPC {rpc_name} (no response)\n")
                 content.append(f" */\n")
-                content.append(f"int32_t execute_{rpc_name}({cmd_arg}, void *res, void *context) {{\n")
+                content.append(f"int32_t windrpc_on_{rpc_name}({cmd_arg}, void *res, void *context) {{\n")
                 if info['cmd_type'] == 'void':
                     content.append(f"    ARG_UNUSED(req);\n")
                 content.append(f"    ARG_UNUSED(res);\n")
@@ -686,7 +710,7 @@ def _generate_callbacks_skeleton(spec_data, package_name):
                 content.append(f"/**\n")
                 content.append(f" * @brief Execute handler for RPC {rpc_name}\n")
                 content.append(f" */\n")
-                content.append(f"int32_t execute_{rpc_name}({cmd_arg}, {res_arg}, void *context) {{\n")
+                content.append(f"int32_t windrpc_on_{rpc_name}({cmd_arg}, {res_arg}, void *context) {{\n")
                 if info['cmd_type'] == 'void':
                     content.append(f"    ARG_UNUSED(req);\n")
                 if info['res_type'] == 'void':
@@ -744,7 +768,7 @@ def _generate_notify_skeleton(spec_data, package_name):
 
                 if envelope_mode == 'flat':
                     content.append(
-                        f"int32_t rpc_encode_notify_{rpc_name}(const {c_type} *data, struct windrpc_transaction *txn) {{\n")
+                        f"int32_t windrpc_notify_{rpc_name}(const {c_type} *data, struct windrpc_transaction *txn) {{\n")
                     content.append(f"    if (!data || !txn) return -1;\n")
                     content.append(f"    struct windrpc_buffer *buffer = &txn->buffer;\n")
                     content.append(f"    uint8_t *tx_data = buffer->tx_data;\n")
@@ -771,7 +795,7 @@ def _generate_notify_skeleton(spec_data, package_name):
                     content.append(f"}}\n\n")
                 else:
                     content.append(
-                        f"int32_t rpc_encode_notify_{rpc_name}(const {c_type} *data, struct windrpc_transaction *txn) {{\n")
+                        f"int32_t windrpc_notify_{rpc_name}(const {c_type} *data, struct windrpc_transaction *txn) {{\n")
                     content.append(f"    if (!data || !txn) return -1;\n")
                     content.append(
                         f"    {prefix}_windrpc_core_ServerMessage notif_msg = {prefix}_windrpc_core_ServerMessage_init_zero;\n")
@@ -812,7 +836,7 @@ def _generate_notify_declarations(spec_data, package_name):
                     c_type = f"rpc_{res_pkg}_{res_msg}_t" if res_pkg != 'types' else f"rpc_types_{res_msg}_t"
                 else:
                     c_type = f"rpc_{svc_name}_{event_type}_t"
-                content.append(f"int32_t rpc_encode_notify_{rpc_name}(const {c_type} *data, struct windrpc_transaction *txn);\n")
+                content.append(f"int32_t windrpc_notify_{rpc_name}(const {c_type} *data, struct windrpc_transaction *txn);\n")
     return "".join(content)
 
 
@@ -978,7 +1002,7 @@ def generate(core_spec_path, user_spec_path, output_dir, mode=None, rtos="zephyr
     file_path = os.path.join(output_dir, "windrpc_notify.c")
     write_smart_merge(file_path, notify_skeleton)
 
-    # generate handler skeleton
+    # generate handler framework adapter
     handler_skeleton = _generate_handler_skeleton(spec_data, package_name, rtos=rtos)
     file_path = os.path.join(output_dir, "windrpc_handler.c")
-    write_smart_merge(file_path, handler_skeleton)
+    write(file_path, handler_skeleton)
