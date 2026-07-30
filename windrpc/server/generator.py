@@ -879,7 +879,8 @@ def _calculate_max_payload_size(spec_data):
     return max_size
 
 
-def _generate_handler_skeleton(spec_data, package_name, rtos="zephyr"):
+def _calculate_stack_and_buffer_sizes(spec_data):
+    """Calculate WINDRPC_MAX_BUFFER_SIZE and WINDRPC_RECOMMENDED_STACK_SIZE from spec."""
     max_payload = _calculate_max_payload_size(spec_data)
 
     # 5B header + payload + COBS overhead safety
@@ -893,27 +894,7 @@ def _generate_handler_skeleton(spec_data, package_name, rtos="zephyr"):
     # Align stack size to 256-byte boundary for RTOS MPU alignment
     recommended_stack_size = (recommended_stack_size + 255) & ~255
 
-    file_path = _get_template_file_path('windrpc_handler.c')
-    try:
-        lines = read_lines(file_path)
-        content_str = "".join(lines)
-    except FileNotFoundError:
-        print(f"error: '{file_path}' is not found")
-        return ""
-
-    defines_str = (
-        f"/* Dynamically Calculated Stack & Buffer Sizes based on Specification */\n"
-        f"#ifndef WINDRPC_MAX_BUFFER_SIZE\n"
-        f"#define WINDRPC_MAX_BUFFER_SIZE {max_buffer_size} // Maximum Message Payload Size: {max_payload} B\n"
-        f"#endif\n\n"
-        f"#ifndef WINDRPC_RECOMMENDED_STACK_SIZE\n"
-        f"#define WINDRPC_RECOMMENDED_STACK_SIZE {recommended_stack_size} // Recommended Thread Stack Size\n"
-        f"#endif\n"
-    )
-
-    result = content_str.replace("// --WINDRPC_STACK_AND_BUFFER_DEFINES", defines_str)
-    result = result.replace("--WINDRPC_RTOS_NAME", rtos.upper())
-    return result
+    return max_buffer_size, recommended_stack_size, max_payload
 
 
 def generate(core_spec_path, user_spec_path, output_dir, mode=None, rtos="zephyr", verbose=False):
@@ -976,12 +957,27 @@ def generate(core_spec_path, user_spec_path, output_dir, mode=None, rtos="zephyr
     envelope_mode = spec_data.get('config', {}).get('envelope_mode', 'flat')
     mode_macro_val = "WINDRPC_ENVELOPE_FLAT" if envelope_mode == 'flat' else "WINDRPC_ENVELOPE_NESTED"
 
+    max_buffer_size, recommended_stack_size, max_payload = _calculate_stack_and_buffer_sizes(spec_data)
+    stack_and_buffer_defines = (
+        f"/* Dynamically Calculated Stack & Buffer Sizes based on Specification */\n"
+        f"#ifndef WINDRPC_MAX_BUFFER_SIZE\n"
+        f"#define WINDRPC_MAX_BUFFER_SIZE {max_buffer_size} // Maximum Message Payload Size: {max_payload} B\n"
+        f"#endif\n\n"
+        f"#ifndef WINDRPC_RECOMMENDED_STACK_SIZE\n"
+        f"#define WINDRPC_RECOMMENDED_STACK_SIZE {recommended_stack_size} // Recommended Thread Stack Size\n"
+        f"#endif"
+    )
+
     source_path = _get_template_file_path('windrpc_config.h')
     config_content = read_lines(source_path)
     config_str = "".join(config_content)
     config_str = config_str.replace(
         "#define WINDRPC_ENVELOPE_MODE WINDRPC_ENVELOPE_NESTED",
         f"#define WINDRPC_ENVELOPE_MODE {mode_macro_val}"
+    )
+    config_str = config_str.replace(
+        "// --WINDRPC_STACK_AND_BUFFER_DEFINES",
+        stack_and_buffer_defines
     )
     write(file_path, config_str)
     print(f"Generated/Updated {file_path} (envelope mode: {envelope_mode})")
@@ -1002,7 +998,3 @@ def generate(core_spec_path, user_spec_path, output_dir, mode=None, rtos="zephyr
     file_path = os.path.join(output_dir, "windrpc_notify.c")
     write_smart_merge(file_path, notify_skeleton)
 
-    # generate handler framework adapter
-    handler_skeleton = _generate_handler_skeleton(spec_data, package_name, rtos=rtos)
-    file_path = os.path.join(output_dir, "windrpc_handler.c")
-    write(file_path, handler_skeleton)

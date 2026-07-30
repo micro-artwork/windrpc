@@ -41,13 +41,11 @@ if(USE_FLAT_MODE)
     add_executable(run_tests 
             test_c_rpc_flat.c 
             ${GEN_DIR}/windrpc.c
-            ${GEN_DIR}/windrpc_handler.c
     )
 else()
     add_executable(run_tests 
             test_c_rpc.c 
             ${GEN_DIR}/windrpc.c
-            ${GEN_DIR}/windrpc_handler.c
     )
 endif()
 

@@ -52,7 +52,8 @@ def handle_proto_command(args):
         user_spec_path=user_spec_path,
         output_dir=output_dir,
         mode=args.mode,
-        verbose=args.verbose
+        verbose=args.verbose,
+        strict=args.strict
     )
     print("--- Protobuf Generation Finished ---")
 
@@ -107,6 +108,9 @@ def main():
         '-m', '--mode', choices=['nested', 'flat'], default=None, help='Envelope mode: flat (default) or nested.')
     proto_parser.add_argument(
         '-v', '--verbose', action='store_true', help='Enable verbose output.')
+    proto_parser.add_argument(
+        '--strict', action='store_true',
+        help='Strict proto style enforcement: treat missing enum value prefixes as errors instead of auto-fixing.')
     proto_parser.set_defaults(func=handle_proto_command)
 
     # --- 'server' 서브커맨드 정의 ---

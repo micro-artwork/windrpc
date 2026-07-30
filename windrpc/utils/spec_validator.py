@@ -8,7 +8,7 @@ parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
     sys.path.append(parent_dir)
 
-from utils.converter import to_pascal_case
+from utils.converter import to_pascal_case, enum_value_prefix, apply_enum_prefix
 import re
 
 
@@ -31,9 +31,15 @@ class ValidationError:
         return str(self) < str(other)
 
 
-def validate(spec_data, verbose=False):
-    """전체 스펙에 대해 ID 고유성 및 기타 규칙을 검증합니다."""
+def validate(spec_data, verbose=False, strict=False):
+    """전체 스펙에 대해 ID 고유성 및 기타 규칙을 검증합니다.
+
+    Args:
+        strict: True이면 enum 값에 prefix가 없을 때 에러로 처리합니다.
+                False(기본)이면 경고만 출력하고 생성 시 자동으로 prefix를 붙입니다.
+    """
     errors = []
+    warnings = []
     if verbose:
         print("--- Starting YAML Specification Validation ---")
 
@@ -227,6 +233,25 @@ def validate(spec_data, verbose=False):
             check_uniqueness(enum_members, 'name',
                              f"{enum_context} -> members")
 
+            # Proto 스타일 가이드: enum 값 접두어 검사
+            # spec의 'prefix' 키 또는 enum 타입명에서 자동 계산
+            explicit_prefix = enum_def.get('prefix', None)
+            expected_prefix = enum_value_prefix(enum_name, explicit_prefix)
+            members_missing_prefix = [
+                m.get('name') for m in enum_members
+                if m.get('name') and not m['name'].upper().startswith(expected_prefix.upper())
+            ]
+            if members_missing_prefix:
+                msg = (
+                    f"Enum '{enum_name}' members {members_missing_prefix} are missing "
+                    f"the required proto-style prefix '{expected_prefix}'. "
+                    f"(auto-fix will apply prefix during generation)"
+                )
+                if strict:
+                    errors.append(ValidationError(msg, enum_context, enum_def.get('__line__')))
+                else:
+                    warnings.append(f"[WARN] {enum_context}: {msg}")
+
             seen_explicit_values = set()
             has_zero = False
             first_member_has_value_0 = False
@@ -259,16 +284,15 @@ def validate(spec_data, verbose=False):
                 member_name = member.get('name', 'N/A')
                 line = member.get('__line__')
 
-                # 멤버 명명 스타일 검사
-                validate_name(member_name, 'enum_member', f"{enum_context} -> member '{member_name}'", line)
+                # 멤버 명명 스타일 검사 (prefix 자동 적용 후 검사)
+                effective_name = apply_enum_prefix(member_name, expected_prefix)
+                validate_name(effective_name, 'enum_member', f"{enum_context} -> member '{member_name}'", line)
 
                 # 'value'가 명시적으로 정의된 경우에만 중복을 검사
                 if 'value' in member:
                     member_value = member.get('value')
 
                     # Protocol Buffer 3에서 첫 번째 enum 값은 0이어야 함 (명시적 또는 암묵적)
-                    # 만약 첫 번째 멤버가 아닌데 value=0을 명시하면 중복으로 간주
-                    # 또는 첫 번째 멤버라도 value=0이 아닌 값을 명시하면 오류
                     if i == 0 and member_value != 0:
                         errors.append(ValidationError(
                             f"The first enum member '{member_name}' must have a value of 0. Received: {member_value}", enum_context, line))
@@ -278,15 +302,9 @@ def validate(spec_data, verbose=False):
                             f"Duplicate explicit value '{member_value}' for enum member '{member_name}'.", enum_context, line))
                     seen_explicit_values.add(member_value)
                 else:
-                    # 'value'가 없는 멤버에 대해, 이전 멤버에 'value'가 없었다면 0이 할당될 것이므로
-                    # 이전에 'value'가 없는 첫 번째 멤버가 이미 0을 가졌는지 확인
-                    if i == 0 and not has_zero:  # 이 조건은 위에서 처리되므로 사실상 필요 없음.
-                        # 하지만 혹시 모르니 남겨둠.
+                    if i == 0 and not has_zero:
                         errors.append(ValidationError(
                             f"The first enum member '{member_name}' must implicitly or explicitly have a value of 0.", enum_context, line))
-
-                    # 'value'가 명시되지 않은 경우, generate_protos.py가 순차적으로 값을 할당할 것이므로
-                    # 이 단계에서 충돌을 미리 감지할 필요는 없음. (generate_protos.py가 유효한 값을 부여할 것임)
                     pass
 
     # --- 3. 메인 검증 로직 ---
@@ -460,7 +478,10 @@ def validate(spec_data, verbose=False):
                         f"Invalid type for 'event': {op['event']}", op_context, line))
 
 
-    # --- 4. 에러 보고 ---
+    # --- 4. 에러/경고 보고 ---
+    if warnings:
+        for w in warnings:
+            print(w)
     if errors:
         print("\nYAML Specification Validation Failed:")
         for error in sorted(errors):

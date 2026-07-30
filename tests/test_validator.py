@@ -96,10 +96,10 @@ class TestSpecValidator(unittest.TestCase):
             spec_validator.validate(self.valid_spec, verbose=False)
 
     def test_invalid_enum_member_name(self):
-        # Enum 멤버명에 소문자 사용 -> UPPER_SNAKE_CASE 위반으로 SystemExit 발생해야 함
+        # Enum 멤버명에 소문자 사용 -> UPPER_SNAKE_CASE 위반 (strict=True)으로 SystemExit 발생해야 함
         self.valid_spec['types']['enums'][0]['members'][0]['name'] = 'none_member'
         with self.assertRaises(SystemExit):
-            spec_validator.validate(self.valid_spec, verbose=False)
+            spec_validator.validate(self.valid_spec, verbose=False, strict=True)
 
     def test_invalid_reserved_service_id(self):
         # 서비스 ID가 예약 영역(1~6)인 5로 설정되면 SystemExit가 발생해야 함

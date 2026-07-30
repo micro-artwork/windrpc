@@ -1,6 +1,6 @@
 # proto/generator.py
 from utils.spec import merge_specs, combine_ids
-from utils.converter import to_pascal_case
+from utils.converter import to_pascal_case, enum_value_prefix, apply_enum_prefix
 from utils.loader import LineNumberLoader
 from utils import spec_validator
 from . import options_generator
@@ -54,14 +54,19 @@ def generate_reserved_statement(yaml_reserved_list):
 
 
 def format_enum_item(item, prefix):
-    return f"  {prefix}{item['name'].upper()} = {item['value']};".upper()
+    """enum 멤버를 proto 스타일로 포맷합니다. prefix 자동 적용 포함."""
+    name = apply_enum_prefix(item['name'], prefix)
+    return f"  {name} = {item['value']};"
 
 
 def generate_enums_from_spec(enums_to_process):
     content = []
     for enum_def in enums_to_process:
         content.append(f"enum {to_pascal_case(enum_def['name'])} {{")
-        prefix = enum_def.get('prefix', '')
+        # Proto 스타일 가이드: enum 값 접두어 자동 적용
+        # spec의 'prefix' 키 우선, 없으면 enum 타입명에서 자동 계산
+        explicit_prefix = enum_def.get('prefix', None)
+        prefix = enum_value_prefix(enum_def['name'], explicit_prefix)
         current_value = 0
         for item in enum_def['members']:
             item['value'] = item.get('value', current_value)
@@ -447,7 +452,7 @@ def generate_windrpc_proto(spec_data, package_prefix):
     return "\n".join(content)
 
 
-def generate(core_spec_path, user_spec_path, output_dir, mode=None, verbose=False):
+def generate(core_spec_path, user_spec_path, output_dir, mode=None, verbose=False, strict=False):
     try:
         with open(core_spec_path, 'r', encoding='utf-8') as f:
             core_spec_data = yaml.load(f, Loader=LineNumberLoader)
@@ -467,7 +472,7 @@ def generate(core_spec_path, user_spec_path, output_dir, mode=None, verbose=Fals
             spec_data['config'] = {}
         spec_data['config']['envelope_mode'] = mode
 
-    spec_validator.validate(spec_data, verbose=verbose)
+    spec_validator.validate(spec_data, verbose=verbose, strict=strict)
     print("YAML Specification validation successful.")
 
     package_name = spec_data.get('package', 'default_package')
