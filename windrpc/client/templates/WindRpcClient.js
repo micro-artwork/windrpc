@@ -43,7 +43,7 @@ export class WindRpcClient {
 
     /**
      * Builds a raw WindRPC binary frame without COBS encoding by default.
-     * Raw Frame format: RPC_ID[2] + SEQ_ID[2] + PAYLOAD_LEN[1] + PAYLOAD
+     * Raw Frame format: RPC_ID[2] + SEQ_ID[2] + PAYLOAD_LEN[2] + PAYLOAD
      * @param {number} rpcId - 16-bit combined RPC ID
      * @param {Uint8Array} payloadBytes - encoded Protobuf payload
      * @returns {Uint8Array} raw binary packet
@@ -55,16 +55,17 @@ export class WindRpcClient {
     buildRawFrame(rpcId, payloadBytes = new Uint8Array(0)) {
         const seqId = this.getNextSeqId();
         const payloadLen = payloadBytes.length;
-        const header = new Uint8Array(5);
+        const header = new Uint8Array(6);
         header[0] = (rpcId >> 8) & 0xFF;
         header[1] = rpcId & 0xFF;
         header[2] = (seqId >> 8) & 0xFF;
         header[3] = seqId & 0xFF;
-        header[4] = payloadLen & 0xFF;
+        header[4] = (payloadLen >> 8) & 0xFF;
+        header[5] = payloadLen & 0xFF;
 
-        const rawPacket = new Uint8Array(5 + payloadLen);
+        const rawPacket = new Uint8Array(6 + payloadLen);
         rawPacket.set(header, 0);
-        if (payloadLen > 0) rawPacket.set(payloadBytes, 5);
+        if (payloadLen > 0) rawPacket.set(payloadBytes, 6);
         return rawPacket;
     }
 
@@ -87,7 +88,7 @@ export class WindRpcClient {
     receiveRawDatagram(bytes, onNotification) {
         if (!bytes) return;
         const decoded = (bytes instanceof Uint8Array) ? bytes : new Uint8Array(bytes);
-        if (decoded && decoded.length >= 5) {
+        if (decoded && decoded.length >= 6) {
             this._dispatchFrame(decoded, onNotification);
         }
     }
@@ -111,7 +112,7 @@ export class WindRpcClient {
                     this._rxAccumulator = [];
                     try {
                         const decoded = cobsDecode(cobsPacket);
-                        if (decoded && decoded.length >= 5) {
+                        if (decoded && decoded.length >= 6) {
                             this._dispatchFrame(decoded, onNotification);
                         }
                     } catch (err) {
@@ -128,11 +129,11 @@ export class WindRpcClient {
     }
 
     _dispatchFrame(decoded, onNotification) {
-        if (decoded.length < 5) return;
+        if (decoded.length < 6) return;
         const rpcId = (decoded[0] << 8) | decoded[1];
         const seqId = (decoded[2] << 8) | decoded[3];
-        const payLen = decoded[4];
-        const payload = decoded.slice(5, 5 + payLen);
+        const payLen = (decoded[4] << 8) | decoded[5];
+        const payload = decoded.slice(6, 6 + payLen);
 
         const pending = this._pendingRequests.get(seqId);
         if (pending) {

@@ -86,7 +86,7 @@ void windrpc_set_error(struct windrpc_context* ctx, int32_t code, const char* me
 
 static int32_t send_flat_error_response(struct windrpc_buffer* buffer, uint16_t seq_id, int32_t code, const char* message) {
     uint8_t* tx_data = buffer->tx_data;
-    if (!tx_data || buffer->tx_size < 5) {
+    if (!tx_data || buffer->tx_size < 6) {
         buffer->bytes_written = 0;
         return -1;
     }
@@ -109,7 +109,7 @@ static int32_t send_flat_error_response(struct windrpc_buffer* buffer, uint16_t 
      * Status 메시지 내 pb_callback_t details 필드의 NULL 포인터(0x00000000) 호출로 인한
      * HardFault(pc: 0x00000000)를 완전 방지하기 위해 code 및 message 필드만 안전하게 수동 인코딩
      */
-    pb_ostream_t ostream = pb_ostream_from_buffer(&tx_data[5], buffer->tx_size - 5);
+    pb_ostream_t ostream = pb_ostream_from_buffer(&tx_data[6], buffer->tx_size - 6);
 
     // Tag 1: code (int32 / svarint)
     pb_encode_tag(&ostream, PB_WT_VARINT, 1);
@@ -121,8 +121,9 @@ static int32_t send_flat_error_response(struct windrpc_buffer* buffer, uint16_t 
         pb_encode_string(&ostream, (const uint8_t*)status_msg.message, strlen(status_msg.message));
     }
 
-    tx_data[4] = (uint8_t)(ostream.bytes_written & 0xFF);
-    buffer->bytes_written = 5 + (uint16_t)ostream.bytes_written;
+    tx_data[4] = (uint8_t)((ostream.bytes_written >> 8) & 0xFF);
+    tx_data[5] = (uint8_t)(ostream.bytes_written & 0xFF);
+    buffer->bytes_written = 6 + (uint16_t)ostream.bytes_written;
     LOG_WRN("Encoded Flat System Error Response (Code: %d, Msg: '%s'). Total Size: %u bytes", code, message ? message : "", buffer->bytes_written);
     return 0;
 }
@@ -135,7 +136,7 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
 
     memset(ctx, 0, sizeof(struct windrpc_context));
 
-    if (buffer->bytes_written < 5) {
+    if (buffer->bytes_written < 6) {
         LOG_ERR("Packet size too small (%u bytes)", buffer->bytes_written);
         ctx->status_code = (int32_t)WINDRPC_STATUS_CODE(INVALID_DATA_FORMAT);
         return -1;
@@ -144,7 +145,7 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
     uint8_t* rx_data = buffer->data;
     uint16_t rpc_id = (uint16_t)((rx_data[0] << 8) | rx_data[1]);
     uint16_t seq_id = (uint16_t)((rx_data[2] << 8) | rx_data[3]);
-    uint16_t payload_len = (buffer->bytes_written >= 5) ? (uint16_t)(buffer->bytes_written - 5) : 0;
+    uint16_t payload_len = (uint16_t)((rx_data[4] << 8) | rx_data[5]);
 
     snprintf((char*)ctx->request_id, WINDRPC_REQUEST_ID_MAX_LEN, "%u", seq_id);
     ctx->request_id_len = (uint8_t)strlen((char*)ctx->request_id);
@@ -160,7 +161,7 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
 
     ctx->handler = handler;
 
-    pb_istream_t istream = pb_istream_from_buffer(&rx_data[5], payload_len);
+    pb_istream_t istream = pb_istream_from_buffer(&rx_data[6], payload_len);
     void* req_ptr = windrpc_get_flat_req_struct(rpc_id);
 
     if (handler->req_fields && req_ptr) {
@@ -192,7 +193,7 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
 
     // Build response packet for REQUEST_RESPONSE pattern
     uint8_t* tx_data = buffer->tx_data;
-    if (!tx_data || buffer->tx_size < 5) {
+    if (!tx_data || buffer->tx_size < 6) {
         LOG_ERR("TX buffer size too small");
         buffer->bytes_written = 0;
         return -1;
@@ -203,7 +204,7 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
     tx_data[2] = (uint8_t)((seq_id >> 8) & 0xFF);
     tx_data[3] = (uint8_t)(seq_id & 0xFF);
 
-    pb_ostream_t ostream = pb_ostream_from_buffer(&tx_data[5], buffer->tx_size - 5);
+    pb_ostream_t ostream = pb_ostream_from_buffer(&tx_data[6], buffer->tx_size - 6);
     if (handler->res_fields && res_ptr) {
         if (!pb_encode(&ostream, handler->res_fields, res_ptr)) {
             LOG_ERR("Failed to encode response for RPC ID 0x%04X", rpc_id);
@@ -212,15 +213,16 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
         }
     } else if (res_ptr && rpc_id == 0x0601) {
         uint32_t ver = *(uint32_t *)res_ptr;
-        tx_data[5] = (uint8_t)((ver >> 24) & 0xFF);
-        tx_data[6] = (uint8_t)((ver >> 16) & 0xFF);
-        tx_data[7] = (uint8_t)((ver >> 8) & 0xFF);
-        tx_data[8] = (uint8_t)(ver & 0xFF);
+        tx_data[6] = (uint8_t)((ver >> 24) & 0xFF);
+        tx_data[7] = (uint8_t)((ver >> 16) & 0xFF);
+        tx_data[8] = (uint8_t)((ver >> 8) & 0xFF);
+        tx_data[9] = (uint8_t)(ver & 0xFF);
         ostream.bytes_written = 4;
     }
 
-    tx_data[4] = (uint8_t)(ostream.bytes_written > 255 ? 255 : ostream.bytes_written);
-    buffer->bytes_written = 5 + (uint16_t)ostream.bytes_written;
+    tx_data[4] = (uint8_t)((ostream.bytes_written >> 8) & 0xFF);
+    tx_data[5] = (uint8_t)(ostream.bytes_written & 0xFF);
+    buffer->bytes_written = 6 + (uint16_t)ostream.bytes_written;
     LOG_DBG("Encoded Flat response. Total Size: %u bytes", buffer->bytes_written);
 
     return 0;
@@ -439,7 +441,7 @@ static int32_t encode_response(pb_ostream_t* stream, struct windrpc_transaction*
 
 int32_t windrpc_process_packet(const uint8_t* rx_packet, uint16_t rx_len,
                                uint8_t* out_resp_buf, uint16_t max_resp_len, uint16_t* out_resp_len) {
-    if (!rx_packet || rx_len < 5) {
+    if (!rx_packet || rx_len < 6) {
         if (out_resp_len) *out_resp_len = 0;
         return -1;
     }
