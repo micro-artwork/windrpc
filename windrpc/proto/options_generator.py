@@ -112,7 +112,7 @@ def generate_options_files(spec_data, output_dir, package_prefix, verbose=False)
         os.makedirs(os.path.dirname(options_file_path), exist_ok=True)
 
         with open(options_file_path, 'w', encoding='utf-8') as f:
-            f.write(f"# Nanopb options for {file_key}\n")
+            f.write(f"# Copyright (c) 2026 WindRPC\n#\n# SPDX-License-Identifier: MIT\n#\n# Nanopb options for {file_key}\n")
             for line in sorted(list(set(options_list))):  # 중복 제거 및 정렬
                 f.write(line + "\n")
 

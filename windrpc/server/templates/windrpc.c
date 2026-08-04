@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2026 WindRPC
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
 #include "windrpc.h"
 
 #include <stdio.h>
@@ -99,15 +105,25 @@ static int32_t send_flat_error_response(struct windrpc_buffer* buffer, uint16_t 
         status_msg.message[sizeof(status_msg.message) - 1] = '\0';
     }
 
+    /* 
+     * Status 메시지 내 pb_callback_t details 필드의 NULL 포인터(0x00000000) 호출로 인한
+     * HardFault(pc: 0x00000000)를 완전 방지하기 위해 code 및 message 필드만 안전하게 수동 인코딩
+     */
     pb_ostream_t ostream = pb_ostream_from_buffer(&tx_data[5], buffer->tx_size - 5);
-    if (pb_encode(&ostream, WINDRPC_TYPES_MSG_FIELDS(Status), &status_msg)) {
-        tx_data[4] = (uint8_t)(ostream.bytes_written & 0xFF);
-        buffer->bytes_written = 5 + (uint16_t)ostream.bytes_written;
-        LOG_WRN("Encoded Flat System Error Response (Code: %d, Msg: '%s'). Total Size: %u bytes", code, message ? message : "", buffer->bytes_written);
-    } else {
-        tx_data[4] = 0;
-        buffer->bytes_written = 5;
+
+    // Tag 1: code (int32 / svarint)
+    pb_encode_tag(&ostream, PB_WT_VARINT, 1);
+    pb_encode_svarint(&ostream, status_msg.code);
+
+    // Tag 2: message (string)
+    if (status_msg.has_message) {
+        pb_encode_tag(&ostream, PB_WT_STRING, 2);
+        pb_encode_string(&ostream, (const uint8_t*)status_msg.message, strlen(status_msg.message));
     }
+
+    tx_data[4] = (uint8_t)(ostream.bytes_written & 0xFF);
+    buffer->bytes_written = 5 + (uint16_t)ostream.bytes_written;
+    LOG_WRN("Encoded Flat System Error Response (Code: %d, Msg: '%s'). Total Size: %u bytes", code, message ? message : "", buffer->bytes_written);
     return 0;
 }
 
@@ -450,4 +466,5 @@ int32_t windrpc_process_packet(const uint8_t* rx_packet, uint16_t rx_len,
 
     return err;
 }
+
 

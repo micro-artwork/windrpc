@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2026 WindRPC
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
 #ifndef WINDRPC_COMMON_H
 #define WINDRPC_COMMON_H
 
@@ -184,3 +190,4 @@ struct windrpc_handler_entry {
 // --WINDRPC_RPC_INDEX_ENUM
 
 #endif  // WINDRPC_COMMON_H
+

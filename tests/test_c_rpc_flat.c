@@ -44,14 +44,20 @@ int32_t windrpc_on_subscribe_power_notification(const rpc_types_Subscribe_t *req
 }
 
 int main(void) {
-    printf("--- Running Flat Envelope Mode C Unit Tests ---\n");
+#if defined(WINDRPC_USE_INPLACE_BUFFER) && WINDRPC_USE_INPLACE_BUFFER == 1
+    printf("--- Running Flat C Unit Tests [IN-PLACE BUFFER MODE] ---\n");
+    uint8_t *tx_buf = shared_buffer;
+#else
+    printf("--- Running Flat C Unit Tests [DOUBLE BUFFER MODE] ---\n");
+    uint8_t *tx_buf = shared_tx_buffer;
+#endif
 
     struct windrpc_transaction txn = {
         .buffer = {
             .data = shared_buffer,
             .size = BUFFER_SIZE,
             .bytes_written = 0,
-            .tx_data = shared_tx_buffer,
+            .tx_data = tx_buf,
             .tx_size = BUFFER_SIZE,
         }
     };
@@ -69,7 +75,22 @@ int main(void) {
     int32_t err = windrpc_handle(&txn);
     assert(err == 0);
     assert(txn.buffer.bytes_written > 5);
+    assert(tx_buf[0] == 0x06 && tx_buf[1] == 0x01);
     printf("PASS: Flat Ping RPC Test\n");
+
+    // Test get_device_info RPC (0x0602)
+    shared_buffer[0] = 0x06;
+    shared_buffer[1] = 0x02;
+    shared_buffer[2] = 0x00;
+    shared_buffer[3] = 0x02; // seq_id = 2
+    shared_buffer[4] = 0;    // payload_len = 0
+    txn.buffer.bytes_written = 5;
+
+    int32_t err_dev_info = windrpc_handle(&txn);
+    assert(err_dev_info == 0);
+    assert(txn.buffer.bytes_written > 5);
+    assert(tx_buf[0] == 0x06 && tx_buf[1] == 0x02);
+    printf("PASS: Flat Get Device Info RPC (0x0602) Test\n");
 
     // Test System Error Status Response (Unknown RPC ID 0x9999)
     shared_buffer[0] = 0x99;
@@ -82,8 +103,8 @@ int main(void) {
     int32_t err_unknown = windrpc_handle(&txn);
     assert(err_unknown == -1);
     assert(txn.buffer.bytes_written >= 5);
-    assert(shared_tx_buffer[0] == 0x00 && shared_tx_buffer[1] == 0x00); // System Error RPC ID = 0x0000
-    assert(shared_tx_buffer[2] == 0x00 && shared_tx_buffer[3] == 0x07); // seq_id = 7
+    assert(tx_buf[0] == 0x00 && tx_buf[1] == 0x00); // System Error RPC ID = 0x0000
+    assert(tx_buf[2] == 0x00 && tx_buf[3] == 0x07); // seq_id = 7
     printf("PASS: Flat System Error Status 0x0000 Response Test\n");
 
     printf("ALL FLAT C UNIT TESTS PASSED SUCCESSFULLY!\n");

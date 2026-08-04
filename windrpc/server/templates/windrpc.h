@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2026 WindRPC
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
 #ifndef WINDRPC_H
 #define WINDRPC_H
 
@@ -46,12 +52,6 @@ struct windrpc_transaction {
 #endif
 };
 
-struct serial_data_msg {
-    uint32_t channel;
-    uint16_t len;
-    uint8_t data[WINDRPC_MAX_BUFFER_SIZE];
-};
-
 int32_t windrpc_init(struct windrpc_device_info* device_info);
 int32_t windrpc_handle(struct windrpc_transaction* txn);
 int32_t windrpc_notify(struct windrpc_transaction* txn);
@@ -72,3 +72,4 @@ int32_t windrpc_process_packet(const uint8_t* rx_packet, uint16_t rx_len,
 // --WINDRPC_NOTIFY_DECLARATIONS
 
 #endif  // WINDRPC_H
+

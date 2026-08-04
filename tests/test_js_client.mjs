@@ -35,7 +35,8 @@ testCobsRoundtrip("Node.js Buffer input compatibility", Buffer.from([0x06, 0x01,
 console.log("\n=== Step 6.2: Running WindRpcClient Frame Building Tests ===");
 
 // 2. WindRpcClient Frame Building Tests
-const pingFrame = windRpcClient.common.buildPingFrame();
+const testClient = new WindRpcClient();
+const pingFrame = testClient.buildCobsFrame(RPC_ID.COMMON_PING);
 assert(pingFrame instanceof Uint8Array, "pingFrame should be Uint8Array");
 assert.strictEqual(pingFrame[pingFrame.length - 1], 0, "pingFrame should end with 0x00 delimiter");
 

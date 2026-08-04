@@ -425,6 +425,7 @@ def _generate_flat_dispatch_table(spec_data, package_name):
 
     content.append("\n// Flat req/res static buffers\n")
     content.append("static uint32_t res_common_ping;\n")
+    content.append("static rpc_common_DeviceInfo_t res_common_get_device_info;\n")
     for service in services:
         svc_name = service['name']
         if svc_name == 'common':  # handled by core
@@ -465,6 +466,9 @@ def _generate_flat_dispatch_table(spec_data, package_name):
     content.append("        case 0x0601:\n")
     content.append("            res_common_ping = 0;\n")
     content.append("            return &res_common_ping;\n")
+    content.append("        case 0x0602:\n")
+    content.append("            memset(&res_common_get_device_info, 0, sizeof(res_common_get_device_info));\n")
+    content.append("            return &res_common_get_device_info;\n")
     for service in services:
         svc_name = service['name']
         if svc_name == 'common':  # handled by core

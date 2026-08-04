@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2026 WindRPC
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
 #ifndef WINDRPC_CONFIG_H
 #define WINDRPC_CONFIG_H
 
@@ -7,13 +13,13 @@
 /*                              Envelope Mode                                 */
 /* -------------------------------------------------------------------------- */
 #define WINDRPC_ENVELOPE_NESTED 0
-#define WINDRPC_ENVELOPE_FLAT   1
+#define WINDRPC_ENVELOPE_FLAT 1
 
 #ifndef WINDRPC_ENVELOPE_MODE
 #define WINDRPC_ENVELOPE_MODE WINDRPC_ENVELOPE_NESTED
 #endif
 
-#define WINDRPC_LOG_LEVEL LOG_LEVEL_DBG
+#define WINDRPC_LOG_LEVEL LOG_LEVEL_INF
 
 // [Default] 0: Separate rx/tx buffers (Double Buffer) for safety.
 //           1: Share a single buffer for rx/tx (In-place) to save RAM.
@@ -33,19 +39,19 @@
 // or edit them directly in this file.
 
 #ifndef WINDRPC_MANUFACTURER_NAME
-#define WINDRPC_MANUFACTURER_NAME  "unknown"
+#define WINDRPC_MANUFACTURER_NAME "unknown"
 #endif
 
 #ifndef WINDRPC_MODEL_NUMBER
-#define WINDRPC_MODEL_NUMBER       "unknown"
+#define WINDRPC_MODEL_NUMBER "unknown"
 #endif
 
 #ifndef WINDRPC_HW_REVISION
-#define WINDRPC_HW_REVISION        "unknown"
+#define WINDRPC_HW_REVISION "unknown"
 #endif
 
 #ifndef WINDRPC_FW_REVISION
-#define WINDRPC_FW_REVISION        "unknown"
+#define WINDRPC_FW_REVISION "unknown"
 #endif
 
 #endif

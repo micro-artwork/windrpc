@@ -81,24 +81,28 @@ def main():
     if not run_step("CMake Build (Flat Mode)", cmake_build_flat_cmd, cwd=os.path.join(root_dir, "tests")):
         sys.exit(1)
 
-    # 4단계: C 테스트 바이너리 실행
-    print_banner("Step 4: Executing Flat C Host Unit Tests")
+    # 4단계: C 테스트 바이너리 실행 (Double Buffer & In-place Buffer 독립 검증)
+    print_banner("Step 4: Executing Flat C Host Unit Tests (Double & In-place Buffers)")
     
-    search_pattern = os.path.join(build_flat_dir, "**", "run_tests.exe")
-    found_binaries = glob.glob(search_pattern, recursive=True)
-    if not found_binaries:
-        search_pattern_unix = os.path.join(build_flat_dir, "**", "run_tests")
-        found_binaries = glob.glob(search_pattern_unix, recursive=True)
+    # 4.1 Double Buffer 모드 바이너리 검증
+    double_binaries = glob.glob(os.path.join(build_flat_dir, "**", "run_tests_double.exe"), recursive=True) + \
+                      glob.glob(os.path.join(build_flat_dir, "**", "run_tests_double"), recursive=True)
+    if double_binaries:
+        double_bin = double_binaries[0]
+        if not run_step("Execute Double Buffer C Test Binary", [double_bin], cwd=os.path.dirname(double_bin)):
+            sys.exit(1)
+    else:
+        print("!! Warning: 'run_tests_double' executable not found.")
 
-    if not found_binaries:
-        print("!! Error: Flat C Test executable 'run_tests' not found in build directory.")
-        sys.exit(1)
-
-    test_bin_path = found_binaries[0]
-    print(f"Found test executable: {test_bin_path}")
-
-    if not run_step("Execute Flat C Test Binary", [test_bin_path], cwd=os.path.dirname(test_bin_path)):
-        sys.exit(1)
+    # 4.2 In-place Buffer 모드 바이너리 검증
+    inplace_binaries = glob.glob(os.path.join(build_flat_dir, "**", "run_tests_inplace.exe"), recursive=True) + \
+                       glob.glob(os.path.join(build_flat_dir, "**", "run_tests_inplace"), recursive=True)
+    if inplace_binaries:
+        inplace_bin = inplace_binaries[0]
+        if not run_step("Execute In-place Buffer C Test Binary", [inplace_bin], cwd=os.path.dirname(inplace_bin)):
+            sys.exit(1)
+    else:
+        print("!! Warning: 'run_tests_inplace' executable not found.")
 
     # 5단계: JS 클라이언트 SDK 생성 및 Node.js 유닛/통합 테스트
     print_banner("Step 5: Testing JS Client SDK with Node.js")

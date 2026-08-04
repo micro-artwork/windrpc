@@ -36,17 +36,35 @@ file(GLOB_RECURSE PROTO_FILES "${GEN_DIR}/*.proto")
 # Proto 파일들로부터 C 소스코드 생성
 nanopb_generate_cpp(TARGET test_protos RELPATH ${GEN_DIR} ${PROTO_FILES})
 
-# 테스트 바이너리 생성
+# 테스트 바이너리 생성 (Double Buffer & In-place Buffer 전용 테스트 각각 생성)
 if(USE_FLAT_MODE)
+    # 1. Double Buffer 모드 테스트 바이너리
+    add_executable(run_tests_double 
+            test_c_rpc_flat.c 
+            ${GEN_DIR}/windrpc.c
+    )
+    target_compile_definitions(run_tests_double PRIVATE WINDRPC_USE_INPLACE_BUFFER=0)
+    target_link_libraries(run_tests_double test_protos)
+
+    # 2. In-place Buffer 모드 테스트 바이너리
+    add_executable(run_tests_inplace 
+            test_c_rpc_flat.c 
+            ${GEN_DIR}/windrpc.c
+    )
+    target_compile_definitions(run_tests_inplace PRIVATE WINDRPC_USE_INPLACE_BUFFER=1)
+    target_link_libraries(run_tests_inplace test_protos)
+
+    # 하위 호환성 및 기존 별칭 유지
     add_executable(run_tests 
             test_c_rpc_flat.c 
             ${GEN_DIR}/windrpc.c
     )
+    target_compile_definitions(run_tests PRIVATE WINDRPC_USE_INPLACE_BUFFER=0)
+    target_link_libraries(run_tests test_protos)
 else()
     add_executable(run_tests 
             test_c_rpc.c 
             ${GEN_DIR}/windrpc.c
     )
+    target_link_libraries(run_tests test_protos)
 endif()
-
-target_link_libraries(run_tests test_protos)
