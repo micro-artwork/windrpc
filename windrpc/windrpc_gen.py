@@ -43,7 +43,7 @@ def _resolve_paths(args):
 
 
 def handle_proto_command(args):
-    """'proto' 서브커맨드를 처리합니다."""
+    """Handles the 'proto' subcommand."""
     print("--- Starting Protobuf Generation ---")
     core_spec_path, user_spec_path, output_dir = _resolve_paths(args)
 
@@ -59,7 +59,7 @@ def handle_proto_command(args):
 
 
 def handle_server_command(args):
-    """'server' 서브커맨드를 처리합니다."""
+    """Handles the 'server' subcommand."""
     print("--- Starting RPC Server Generation ---")
     core_spec_path, user_spec_path, output_dir = _resolve_paths(args)
 
@@ -74,7 +74,7 @@ def handle_server_command(args):
 
 
 def handle_client_command(args):
-    """'client' 서브커맨드를 처리합니다."""
+    """Handles the 'client' subcommand."""
     print(f"--- Starting RPC Client Generation ({args.lang}) ---")
     core_spec_path, user_spec_path, output_dir = _resolve_paths(args)
 
@@ -95,7 +95,7 @@ def main():
     subparsers = parser.add_subparsers(
         dest='command', required=True, help='Available commands')
 
-    # --- 'proto' 서브커맨드 정의 ---
+    # --- Define 'proto' subcommand ---
     proto_parser = subparsers.add_parser(
         'proto', help='Generate .proto files from YAML specifications.')
     proto_parser.add_argument(
@@ -113,7 +113,7 @@ def main():
         help='Strict proto style enforcement: treat missing enum value prefixes as errors instead of auto-fixing.')
     proto_parser.set_defaults(func=handle_proto_command)
 
-    # --- 'server' 서브커맨드 정의 ---
+    # --- Define 'server' subcommand ---
     server_parser = subparsers.add_parser(
         'server', help='Generate RPC server C code.')
     server_parser.add_argument(
@@ -130,7 +130,7 @@ def main():
         '-v', '--verbose', action='store_true', help='Enable verbose output.')
     server_parser.set_defaults(func=handle_server_command)
 
-    # --- 'client' 서브커맨드 정의 ---
+    # --- Define 'client' subcommand ---
     client_parser = subparsers.add_parser(
         'client', help='Generate RPC client SDK code (e.g. C#).')
     client_parser.add_argument(

@@ -13,7 +13,7 @@ def run_step(step_name, cmd_args, cwd=None):
     print(f"\n>> Running: {step_name}...")
     print(f"Command: {' '.join(cmd_args)}")
     try:
-        # 실시간 스트리밍 출력을 위해 stdout/stderr 파이프를 제거하고 직결
+        # Connect stdout/stderr directly for real-time streaming output
         subprocess.run(cmd_args, cwd=cwd, check=True, text=True)
         return True
     except subprocess.CalledProcessError as e:
@@ -31,13 +31,13 @@ def main():
 
     print_banner("WindRPC Integrated Test Suite Execution")
 
-    # 1단계: 파이썬 Validator 유닛 테스트 실행
+    # Step 1: Python Validator Unit Tests
     print_banner("Step 1: Python Validator Unit Tests")
     py_test_cmd = [sys.executable, "-m", "unittest", "tests/test_validator.py"]
     if not run_step("Python Validator Tests", py_test_cmd, cwd=root_dir):
         sys.exit(1)
 
-    # 2단계: 코드 제너레이션 테스트 (Flat Mode)
+    # Step 2: Code Generation Tests (Flat Mode)
     print_banner("Step 2: Auto-Generating Flat Proto & C Server Code")
     flat_gen_dir = os.path.join(root_dir, "tests", "generated_flat")
     if os.path.exists(flat_gen_dir):
@@ -64,7 +64,7 @@ def main():
     if not run_step("Generating C Server Code (Flat)", gen_server_flat_cmd, cwd=root_dir):
         sys.exit(1)
 
-    # 3단계: PC 호스트 컴파일 (CMake - Flat Mode)
+    # Step 3: PC Host Compilation (CMake - Flat Mode)
     print_banner("Step 3: Compiling Flat C Host Tests")
     build_flat_dir = os.path.join(root_dir, "tests", "build_flat")
     os.makedirs(build_flat_dir, exist_ok=True)
@@ -81,10 +81,10 @@ def main():
     if not run_step("CMake Build (Flat Mode)", cmake_build_flat_cmd, cwd=os.path.join(root_dir, "tests")):
         sys.exit(1)
 
-    # 4단계: C 테스트 바이너리 실행 (Double Buffer & In-place Buffer 독립 검증)
+    # Step 4: Execute Flat C Host Unit Tests (Double & In-place Buffers)
     print_banner("Step 4: Executing Flat C Host Unit Tests (Double & In-place Buffers)")
     
-    # 4.1 Double Buffer 모드 바이너리 검증
+    # 4.1 Double Buffer Mode Binary Verification
     double_binaries = glob.glob(os.path.join(build_flat_dir, "**", "run_tests_double.exe"), recursive=True) + \
                       glob.glob(os.path.join(build_flat_dir, "**", "run_tests_double"), recursive=True)
     if double_binaries:
@@ -94,7 +94,7 @@ def main():
     else:
         print("!! Warning: 'run_tests_double' executable not found.")
 
-    # 4.2 In-place Buffer 모드 바이너리 검증
+    # 4.2 In-place Buffer Mode Binary Verification
     inplace_binaries = glob.glob(os.path.join(build_flat_dir, "**", "run_tests_inplace.exe"), recursive=True) + \
                        glob.glob(os.path.join(build_flat_dir, "**", "run_tests_inplace"), recursive=True)
     if inplace_binaries:
@@ -104,7 +104,7 @@ def main():
     else:
         print("!! Warning: 'run_tests_inplace' executable not found.")
 
-    # 5단계: JS 클라이언트 SDK 생성 및 Node.js 유닛/통합 테스트
+    # Step 5: JS Client SDK Generation and Node.js Unit/Integration Tests
     print_banner("Step 5: Testing JS Client SDK with Node.js")
     gen_js_dir = os.path.join(root_dir, "tests", "generated_js")
     if os.path.exists(gen_js_dir):
@@ -123,7 +123,7 @@ def main():
     else:
         print("  - Warning: 'node' executable not found. Skipping Node.js JS test.")
 
-    # 6단계: C# 클라이언트 SDK dotnet 빌드 및 실행 검증
+    # Step 6: C# Client SDK Compilation and dotnet Build Verification
     print_banner("Step 6: Testing C# Client SDK Compilation with dotnet")
     csharp_project = os.path.abspath(os.path.join(root_dir, "..", "c#", "HilightBoxWInForm", "HilightBox.csproj"))
     csharp_out_dir = os.path.join(os.path.dirname(csharp_project), "Communication", "WindRpc")

@@ -2,7 +2,7 @@
 import sys
 import os
 
-# 경로 설정을 통해 converter 모듈을 임포트
+# Configure import path for converter module
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 if parent_dir not in sys.path:
@@ -13,7 +13,7 @@ import re
 
 
 class ValidationError:
-    """메시지, 컨텍스트, 줄 번호를 포함하는 유효성 검증 에러를 나타냅니다."""
+    """Represents a validation error with message, context, and line number."""
 
     def __init__(self, message, context, line=None):
         self.message = message
@@ -32,18 +32,18 @@ class ValidationError:
 
 
 def validate(spec_data, verbose=False, strict=False):
-    """전체 스펙에 대해 ID 고유성 및 기타 규칙을 검증합니다.
+    """Validates ID uniqueness and rule compliance across the specification.
 
     Args:
-        strict: True이면 enum 값에 prefix가 없을 때 에러로 처리합니다.
-                False(기본)이면 경고만 출력하고 생성 시 자동으로 prefix를 붙입니다.
+        strict: If True, treat missing enum value prefixes as errors.
+                If False (default), log warnings and auto-fix during code generation.
     """
     errors = []
     warnings = []
     if verbose:
         print("--- Starting YAML Specification Validation ---")
 
-    # --- 1. 사전 계산 ---
+    # --- 1. Pre-computation ---
     IDENTIFIER_PATTERN = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
     SNAKE_CASE_PATTERN = re.compile(r'^[a-z0-9_]+$')
     PASCAL_CASE_PATTERN = re.compile(r'^[A-Z][a-zA-Z0-9]*$')
@@ -79,7 +79,7 @@ def validate(spec_data, verbose=False, strict=False):
         elif expected_type in ('field', 'rpc'):
             if not SNAKE_CASE_PATTERN.match(name):
                 errors.append(ValidationError(
-                    f"{expected_type.upper()} name '{name}' violates styling rules. Must be in snake_case (lowercase, numbers, and underscores).",
+                    f"Name '{name}' violates styling rules. Must be in snake_case.",
                     context, line
                 ))
                 return False
@@ -110,9 +110,9 @@ def validate(spec_data, verbose=False, strict=False):
     services = spec_data.get('services') or []
     VALID_RPC_TYPES = {'REQUEST_ONLY', 'REQUEST_RESPONSE', 'NOTIFICATION'}
 
-    # 헬퍼 함수 정의 (to_pascal_case)
+    # Helper function definition (to_pascal_case)
     def to_pascal_case(name):
-        """스네이크 케이스나 카멜 케이스를 파스칼 케이스로 변환합니다."""
+        """Converts snake_case or camelCase to PascalCase."""
         if not name or not isinstance(name, str):
             return name
         if '_' in name:
@@ -120,7 +120,7 @@ def validate(spec_data, verbose=False, strict=False):
         else:
             return name[0].upper() + name[1:]
 
-    # 교차 파일 검증을 위한 이름 목록 사전 계산
+    # Pre-compute name sets for cross-file validation
     normalized_service_names = {to_pascal_case(
         svc.get('name')) for svc in services if svc.get('name')}
 
@@ -136,8 +136,8 @@ def validate(spec_data, verbose=False, strict=False):
         } for svc in services
     }
 
-    # --- 2. 헬퍼 함수 ---
-    # --- 2. [수정됨] 유효성 검증 헬퍼 함수 ---
+    # --- 2. Helper Functions ---
+    # --- 2. [Modified] Validation Helper Functions ---
     def is_valid_type(type_name, current_service_name=None):
         if not type_name or not isinstance(type_name, str):
             return False
@@ -186,7 +186,7 @@ def validate(spec_data, verbose=False, strict=False):
             seen_values.add(value)
 
     def check_normalized_name_uniqueness(items, key, context_name, normalizer):
-        """정규화된 이름의 고유성을 확인합니다. (범위 내에서)"""
+        """Validates uniqueness of normalized names (within scope)."""
         seen_normalized_names = {}  # {normalized_name: first_item}
         if not items:
             return
@@ -222,19 +222,19 @@ def validate(spec_data, verbose=False, strict=False):
                 errors.append(ValidationError(
                     f"Invalid type '{field.get('type')}' for field '{field.get('name')}'.", context_name, field.get('__line__')))
 
-    # 수정된 enum 검증 헬퍼 함수
+    # Enum validation helper function
     def validate_enums(enum_defs, context_base_name):
         for enum_def in enum_defs:
             enum_name = enum_def.get('name', 'N/A')
             enum_context = f"{context_base_name} -> enum '{enum_name}'"
             enum_members = enum_def.get('members') or []
 
-            # 'name' 고유성 검사는 그대로 유지 (enum 멤버 이름은 고유해야 함)
+            # Maintain 'name' uniqueness check (enum member names must be unique)
             check_uniqueness(enum_members, 'name',
                              f"{enum_context} -> members")
 
-            # Proto 스타일 가이드: enum 값 접두어 검사
-            # spec의 'prefix' 키 또는 enum 타입명에서 자동 계산
+            # Proto style guide: check enum value prefixes
+            # Derive prefix automatically from 'prefix' key or enum type name
             explicit_prefix = enum_def.get('prefix', None)
             expected_prefix = enum_value_prefix(enum_name, explicit_prefix)
             members_missing_prefix = [
@@ -256,19 +256,19 @@ def validate(spec_data, verbose=False, strict=False):
             has_zero = False
             first_member_has_value_0 = False
 
-            # YAML 로더가 줄 번호를 주입하는 방식이므로, members 리스트에서 첫 번째 멤버를 안전하게 확인
+            # Safely check first member in members list (line numbers injected by YAML loader)
             first_member = enum_members[0] if enum_members else None
 
-            # 0 값 존재 여부 검사
-            # Case 1: 첫 번째 멤버의 value가 0으로 명시된 경우
+            # Check presence of value 0
+            # Case 1: First member explicitly specifies value 0
             if first_member and first_member.get('value') == 0:
                 has_zero = True
                 first_member_has_value_0 = True
-            # Case 2: 첫 번째 멤버에 value가 없어서 자동으로 0이 할당될 경우
+            # Case 2: First member lacks value and automatically receives 0
             elif first_member and 'value' not in first_member:
                 has_zero = True
                 first_member_has_value_0 = True
-            # Case 3: 다른 멤버에 0이 명시적으로 존재하는 경우
+            # Case 3: Other members explicitly specify 0
             else:
                 for member in enum_members:
                     if member.get('value') == 0:
@@ -279,20 +279,20 @@ def validate(spec_data, verbose=False, strict=False):
                 errors.append(ValidationError(
                     "Enum must contain a member with value 0. Protocol Buffer 3 requires the first enum value to be 0 or to be implicitly assigned 0.", enum_context, enum_def.get('__line__')))
 
-            # 중복 값 검사 (명시적으로 지정된 값만 검사)
+            # Check for duplicate values (only check explicitly specified values)
             for i, member in enumerate(enum_members):
                 member_name = member.get('name', 'N/A')
                 line = member.get('__line__')
 
-                # 멤버 명명 스타일 검사 (prefix 자동 적용 후 검사)
+                # Check member naming style (after auto-applying prefix)
                 effective_name = apply_enum_prefix(member_name, expected_prefix)
                 validate_name(effective_name, 'enum_member', f"{enum_context} -> member '{member_name}'", line)
 
-                # 'value'가 명시적으로 정의된 경우에만 중복을 검사
+                # Check duplicate value only if 'value' is explicitly defined
                 if 'value' in member:
                     member_value = member.get('value')
 
-                    # Protocol Buffer 3에서 첫 번째 enum 값은 0이어야 함 (명시적 또는 암묵적)
+                    # In Protocol Buffers 3, first enum value must be 0 (explicit or implicit)
                     if i == 0 and member_value != 0:
                         errors.append(ValidationError(
                             f"The first enum member '{member_name}' must have a value of 0. Received: {member_value}", enum_context, line))
@@ -307,7 +307,7 @@ def validate(spec_data, verbose=False, strict=False):
                             f"The first enum member '{member_name}' must implicitly or explicitly have a value of 0.", enum_context, line))
                     pass
 
-    # --- 3. 메인 검증 로직 ---
+    # --- 3. Main Validation Logic ---
 
     if verbose:
         print("Validating cross-file package and name safety...")
@@ -363,7 +363,7 @@ def validate(spec_data, verbose=False, strict=False):
         enum_name = enum_def.get('name')
         validate_name(enum_name, 'enum', f"types.enum '{enum_name}'", enum_def.get('__line__'))
 
-    # Enum 검증 로직 추가
+    # Validate enums in types section
     validate_enums(types_enums, "types")
 
     if not services:
@@ -377,7 +377,7 @@ def validate(spec_data, verbose=False, strict=False):
         svc_context = f"service '{svc_name}'"
         validate_name(svc_name, 'service', svc_context, svc.get('__line__'))
         
-        # 서비스 ID 예약 구간 및 제약 검증
+        # Validate service ID range and constraints
         svc_id = svc.get('id')
         if svc_id is not None:
             if not isinstance(svc_id, int):
@@ -415,7 +415,7 @@ def validate(spec_data, verbose=False, strict=False):
             enum_name = enum_def.get('name')
             validate_name(enum_name, 'enum', f"{svc_context} -> enum '{enum_name}'", enum_def.get('__line__'))
 
-        # 서비스 내 enum 검증 로직 추가
+        # Validate enums within service
         validate_enums(service_enums, svc_context)
 
         check_uniqueness(rpcs, 'id', f"{svc_context} -> rpcs")
@@ -426,7 +426,7 @@ def validate(spec_data, verbose=False, strict=False):
             op_context = f"{svc_context} -> rpc '{op_name}'"
             validate_name(op_name, 'rpc', op_context, op.get('__line__'))
             
-            # RPC ID 유효 범위 및 제약 검증
+            # Validate RPC ID range and constraints
             op_id = op.get('id')
             if op_id is not None:
                 if not isinstance(op_id, int):
@@ -478,7 +478,7 @@ def validate(spec_data, verbose=False, strict=False):
                         f"Invalid type for 'event': {op['event']}", op_context, line))
 
 
-    # --- 4. 에러/경고 보고 ---
+    # --- 4. Error / Warning Reporting ---
     if warnings:
         for w in warnings:
             print(w)

@@ -3,7 +3,7 @@ import os
 
 
 class LineNumberLoader(yaml.SafeLoader):
-    """YAML 로더를 커스터마이즈하여 딕셔너리에 줄 번호를 첨부합니다."""
+    """Custom YAML loader that attaches line numbers to parsed dictionaries."""
 
     def construct_mapping(self, node, deep=False):
         mapping = super().construct_mapping(node, deep=deep)
