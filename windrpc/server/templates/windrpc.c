@@ -94,8 +94,8 @@ static int32_t send_flat_error_response(struct windrpc_buffer* buffer, uint16_t 
     // Reserved System Error RPC ID = 0x0000
     tx_data[0] = 0x00;
     tx_data[1] = 0x00;
-    tx_data[2] = (uint8_t)((seq_id >> 8) & 0xFF);
-    tx_data[3] = (uint8_t)(seq_id & 0xFF);
+    tx_data[2] = (uint8_t)(seq_id & 0xFF);
+    tx_data[3] = (uint8_t)((seq_id >> 8) & 0xFF);
 
     WINDRPC_TYPES_TYPE(Status) status_msg = {0};
     status_msg.code = code;
@@ -121,8 +121,8 @@ static int32_t send_flat_error_response(struct windrpc_buffer* buffer, uint16_t 
         pb_encode_string(&ostream, (const uint8_t*)status_msg.message, strlen(status_msg.message));
     }
 
-    tx_data[4] = (uint8_t)((ostream.bytes_written >> 8) & 0xFF);
-    tx_data[5] = (uint8_t)(ostream.bytes_written & 0xFF);
+    tx_data[4] = (uint8_t)(ostream.bytes_written & 0xFF);
+    tx_data[5] = (uint8_t)((ostream.bytes_written >> 8) & 0xFF);
     buffer->bytes_written = 6 + (uint16_t)ostream.bytes_written;
     LOG_WRN("Encoded Flat System Error Response (Code: %d, Msg: '%s'). Total Size: %u bytes", code, message ? message : "", buffer->bytes_written);
     return 0;
@@ -143,9 +143,9 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
     }
 
     uint8_t* rx_data = buffer->data;
-    uint16_t rpc_id = (uint16_t)((rx_data[0] << 8) | rx_data[1]);
-    uint16_t seq_id = (uint16_t)((rx_data[2] << 8) | rx_data[3]);
-    uint16_t payload_len = (uint16_t)((rx_data[4] << 8) | rx_data[5]);
+    uint16_t rpc_id = (uint16_t)(rx_data[0] | ((uint16_t)rx_data[1] << 8));
+    uint16_t seq_id = (uint16_t)(rx_data[2] | ((uint16_t)rx_data[3] << 8));
+    uint16_t payload_len = (uint16_t)(rx_data[4] | ((uint16_t)rx_data[5] << 8));
 
     snprintf((char*)ctx->request_id, WINDRPC_REQUEST_ID_MAX_LEN, "%u", seq_id);
     ctx->request_id_len = (uint8_t)strlen((char*)ctx->request_id);
@@ -199,10 +199,10 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
         return -1;
     }
 
-    tx_data[0] = (uint8_t)((rpc_id >> 8) & 0xFF);
-    tx_data[1] = (uint8_t)(rpc_id & 0xFF);
-    tx_data[2] = (uint8_t)((seq_id >> 8) & 0xFF);
-    tx_data[3] = (uint8_t)(seq_id & 0xFF);
+    tx_data[0] = (uint8_t)(rpc_id & 0xFF);
+    tx_data[1] = (uint8_t)((rpc_id >> 8) & 0xFF);
+    tx_data[2] = (uint8_t)(seq_id & 0xFF);
+    tx_data[3] = (uint8_t)((seq_id >> 8) & 0xFF);
 
     pb_ostream_t ostream = pb_ostream_from_buffer(&tx_data[6], buffer->tx_size - 6);
     if (handler->res_fields && res_ptr) {
@@ -213,15 +213,15 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
         }
     } else if (res_ptr && rpc_id == 0x0601) {
         uint32_t ver = *(uint32_t *)res_ptr;
-        tx_data[6] = (uint8_t)((ver >> 24) & 0xFF);
-        tx_data[7] = (uint8_t)((ver >> 16) & 0xFF);
-        tx_data[8] = (uint8_t)((ver >> 8) & 0xFF);
-        tx_data[9] = (uint8_t)(ver & 0xFF);
+        tx_data[6] = (uint8_t)(ver & 0xFF);
+        tx_data[7] = (uint8_t)((ver >> 8) & 0xFF);
+        tx_data[8] = (uint8_t)((ver >> 16) & 0xFF);
+        tx_data[9] = (uint8_t)((ver >> 24) & 0xFF);
         ostream.bytes_written = 4;
     }
 
-    tx_data[4] = (uint8_t)((ostream.bytes_written >> 8) & 0xFF);
-    tx_data[5] = (uint8_t)(ostream.bytes_written & 0xFF);
+    tx_data[4] = (uint8_t)(ostream.bytes_written & 0xFF);
+    tx_data[5] = (uint8_t)((ostream.bytes_written >> 8) & 0xFF);
     buffer->bytes_written = 6 + (uint16_t)ostream.bytes_written;
     LOG_DBG("Encoded Flat response. Total Size: %u bytes", buffer->bytes_written);
 

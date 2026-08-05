@@ -778,8 +778,8 @@ def _generate_notify_skeleton(spec_data, package_name):
                     content.append(f"    uint8_t *tx_data = buffer->tx_data;\n")
                     content.append(f"    if (buffer->tx_size < 6) return -1;\n\n")
                     content.append(f"    uint16_t event_id = 0x{event_combined_id:04X};\n")
-                    content.append(f"    tx_data[0] = (uint8_t)((event_id >> 8) & 0xFF);\n")
-                    content.append(f"    tx_data[1] = (uint8_t)(event_id & 0xFF);\n")
+                    content.append(f"    tx_data[0] = (uint8_t)(event_id & 0xFF);\n")
+                    content.append(f"    tx_data[1] = (uint8_t)((event_id >> 8) & 0xFF);\n")
                     content.append(f"    tx_data[2] = 0; // seq_id = 0 for server push notification\n")
                     content.append(f"    tx_data[3] = 0;\n\n")
                     content.append(
@@ -791,8 +791,8 @@ def _generate_notify_skeleton(spec_data, package_name):
                     content.append(f"        buffer->bytes_written = 0;\n")
                     content.append(f"        return -1;\n")
                     content.append(f"    }}\n\n")
-                    content.append(f"    tx_data[4] = (uint8_t)((ostream.bytes_written >> 8) & 0xFF);\n")
-                    content.append(f"    tx_data[5] = (uint8_t)(ostream.bytes_written & 0xFF);\n")
+                    content.append(f"    tx_data[4] = (uint8_t)(ostream.bytes_written & 0xFF);\n")
+                    content.append(f"    tx_data[5] = (uint8_t)((ostream.bytes_written >> 8) & 0xFF);\n")
                     content.append(f"    buffer->bytes_written = 6 + (uint16_t)ostream.bytes_written;\n")
                     content.append(
                         f"    LOG_DBG(\"Encoded flat notification '{rpc_name}'. Total Size: %u bytes\", buffer->bytes_written);\n")

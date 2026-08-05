@@ -56,12 +56,12 @@ export class WindRpcClient {
         const seqId = this.getNextSeqId();
         const payloadLen = payloadBytes.length;
         const header = new Uint8Array(6);
-        header[0] = (rpcId >> 8) & 0xFF;
-        header[1] = rpcId & 0xFF;
-        header[2] = (seqId >> 8) & 0xFF;
-        header[3] = seqId & 0xFF;
-        header[4] = (payloadLen >> 8) & 0xFF;
-        header[5] = payloadLen & 0xFF;
+        header[0] = rpcId & 0xFF;
+        header[1] = (rpcId >> 8) & 0xFF;
+        header[2] = seqId & 0xFF;
+        header[3] = (seqId >> 8) & 0xFF;
+        header[4] = payloadLen & 0xFF;
+        header[5] = (payloadLen >> 8) & 0xFF;
 
         const rawPacket = new Uint8Array(6 + payloadLen);
         rawPacket.set(header, 0);
@@ -130,9 +130,9 @@ export class WindRpcClient {
 
     _dispatchFrame(decoded, onNotification) {
         if (decoded.length < 6) return;
-        const rpcId = (decoded[0] << 8) | decoded[1];
-        const seqId = (decoded[2] << 8) | decoded[3];
-        const payLen = (decoded[4] << 8) | decoded[5];
+        const rpcId = decoded[0] | (decoded[1] << 8);
+        const seqId = decoded[2] | (decoded[3] << 8);
+        const payLen = decoded[4] | (decoded[5] << 8);
         const payload = decoded.slice(6, 6 + payLen);
 
         const pending = this._pendingRequests.get(seqId);

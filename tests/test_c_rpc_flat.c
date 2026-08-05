@@ -65,40 +65,40 @@ int main(void) {
     windrpc_init(NULL);
 
     // Test ping RPC (0x0601)
-    shared_buffer[0] = 0x06;
-    shared_buffer[1] = 0x01;
-    shared_buffer[2] = 0x00;
-    shared_buffer[3] = 0x01; // seq_id = 1
-    shared_buffer[4] = 0;    // payload_len_hi = 0
-    shared_buffer[5] = 0;    // payload_len_lo = 0
+    shared_buffer[0] = 0x01; // rpc_id lo
+    shared_buffer[1] = 0x06; // rpc_id hi
+    shared_buffer[2] = 0x01; // seq_id lo
+    shared_buffer[3] = 0x00; // seq_id hi
+    shared_buffer[4] = 0;    // payload_len_lo = 0
+    shared_buffer[5] = 0;    // payload_len_hi = 0
     txn.buffer.bytes_written = 6;
 
     int32_t err = windrpc_handle(&txn);
     assert(err == 0);
     assert(txn.buffer.bytes_written > 6);
-    assert(tx_buf[0] == 0x06 && tx_buf[1] == 0x01);
+    assert(tx_buf[0] == 0x01 && tx_buf[1] == 0x06);
     printf("PASS: Flat Ping RPC Test\n");
 
     // Test get_device_info RPC (0x0602)
-    shared_buffer[0] = 0x06;
-    shared_buffer[1] = 0x02;
-    shared_buffer[2] = 0x00;
-    shared_buffer[3] = 0x02; // seq_id = 2
-    shared_buffer[4] = 0;    // payload_len_hi = 0
-    shared_buffer[5] = 0;    // payload_len_lo = 0
+    shared_buffer[0] = 0x02; // rpc_id lo
+    shared_buffer[1] = 0x06; // rpc_id hi
+    shared_buffer[2] = 0x02; // seq_id lo
+    shared_buffer[3] = 0x00; // seq_id hi
+    shared_buffer[4] = 0;    // payload_len_lo = 0
+    shared_buffer[5] = 0;    // payload_len_hi = 0
     txn.buffer.bytes_written = 6;
 
     int32_t err_dev_info = windrpc_handle(&txn);
     assert(err_dev_info == 0);
     assert(txn.buffer.bytes_written > 6);
-    assert(tx_buf[0] == 0x06 && tx_buf[1] == 0x02);
+    assert(tx_buf[0] == 0x02 && tx_buf[1] == 0x06);
     printf("PASS: Flat Get Device Info RPC (0x0602) Test\n");
 
     // Test System Error Status Response (Unknown RPC ID 0x9999)
     shared_buffer[0] = 0x99;
     shared_buffer[1] = 0x99;
-    shared_buffer[2] = 0x00;
-    shared_buffer[3] = 0x07; // seq_id = 7
+    shared_buffer[2] = 0x07; // seq_id = 7
+    shared_buffer[3] = 0x00;
     shared_buffer[4] = 0;
     shared_buffer[5] = 0;
     txn.buffer.bytes_written = 6;
@@ -107,7 +107,7 @@ int main(void) {
     assert(err_unknown == -1);
     assert(txn.buffer.bytes_written >= 6);
     assert(tx_buf[0] == 0x00 && tx_buf[1] == 0x00); // System Error RPC ID = 0x0000
-    assert(tx_buf[2] == 0x00 && tx_buf[3] == 0x07); // seq_id = 7
+    assert(tx_buf[2] == 0x07 && tx_buf[3] == 0x00); // seq_id = 7
     printf("PASS: Flat System Error Status 0x0000 Response Test\n");
 
     printf("ALL FLAT C UNIT TESTS PASSED SUCCESSFULLY!\n");
