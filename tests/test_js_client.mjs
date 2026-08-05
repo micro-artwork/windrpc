@@ -6,11 +6,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const generatedDir = path.join(__dirname, 'generated_js');
 
 // Dynamically import generated JS SDK files using file:// URLs
-const cobsPath = pathToFileURL(path.join(generatedDir, 'cobs.js')).href;
 const clientPath = pathToFileURL(path.join(generatedDir, 'WindRpcClient.js')).href;
 
-const { cobsEncode, cobsDecode } = await import(cobsPath);
-const { windRpcClient, WindRpcClient, RPC_ID } = await import(clientPath);
+const { windRpcClient, WindRpcClient, RPC_ID, cobsEncode, cobsDecode } = await import(clientPath);
 
 console.log("=== Step 6.1: Running COBS Unit Tests ===");
 

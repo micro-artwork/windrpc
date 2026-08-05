@@ -1,4 +1,4 @@
-package: pkg_peqi3n
+package: pkg_wpiynn
 config:
   request_id:
     enable: true

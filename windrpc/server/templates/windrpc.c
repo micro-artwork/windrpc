@@ -1,9 +1,3 @@
-/*
- * Copyright (c) 2026 WindRPC
- *
- * SPDX-License-Identifier: MIT
- */
-
 #include "windrpc.h"
 
 #include <stdio.h>
@@ -82,6 +76,7 @@ void windrpc_set_error(struct windrpc_context* ctx, int32_t code, const char* me
 
 // --WINDRPC_FLAT_DISPATCH_TABLE
 
+// Reserved System Error RPC ID (0x0000)
 static int32_t send_flat_error_response(struct windrpc_buffer* buffer, uint16_t seq_id, int32_t code, const char* message) {
     uint8_t* tx_data = buffer->tx_data;
     if (!tx_data || buffer->tx_size < 6) {
@@ -89,7 +84,6 @@ static int32_t send_flat_error_response(struct windrpc_buffer* buffer, uint16_t 
         return -1;
     }
 
-    // Reserved System Error RPC ID = 0x0000
     tx_data[0] = 0x00;
     tx_data[1] = 0x00;
     tx_data[2] = (uint8_t)(seq_id & 0xFF);
@@ -103,17 +97,11 @@ static int32_t send_flat_error_response(struct windrpc_buffer* buffer, uint16_t 
         status_msg.message[sizeof(status_msg.message) - 1] = '\0';
     }
 
-    /* 
-     * Status 메시지 내 pb_callback_t details 필드의 NULL 포인터(0x00000000) 호출로 인한
-     * HardFault(pc: 0x00000000)를 완전 방지하기 위해 code 및 message 필드만 안전하게 수동 인코딩
-     */
     pb_ostream_t ostream = pb_ostream_from_buffer(&tx_data[6], buffer->tx_size - 6);
 
-    // Tag 1: code (int32 / svarint)
     pb_encode_tag(&ostream, PB_WT_VARINT, 1);
     pb_encode_svarint(&ostream, status_msg.code);
 
-    // Tag 2: message (string)
     if (status_msg.has_message) {
         pb_encode_tag(&ostream, PB_WT_STRING, 2);
         pb_encode_string(&ostream, (const uint8_t*)status_msg.message, strlen(status_msg.message));
@@ -126,6 +114,7 @@ static int32_t send_flat_error_response(struct windrpc_buffer* buffer, uint16_t 
     return 0;
 }
 
+// RX packet handler & O(1) direct lookup dispatcher
 int32_t windrpc_handle(struct windrpc_transaction* txn) {
     struct windrpc_buffer* buffer = &txn->buffer;
     struct windrpc_context* ctx = &txn->context;
@@ -140,6 +129,7 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
         return -1;
     }
 
+    // 6-byte header: [RPC_ID:2][SEQ_ID:2][PAYLOAD_LEN:2] (Little-Endian)
     uint8_t* rx_data = buffer->data;
     uint16_t rpc_id = (uint16_t)(rx_data[0] | ((uint16_t)rx_data[1] << 8));
     uint16_t seq_id = (uint16_t)(rx_data[2] | ((uint16_t)rx_data[3] << 8));
@@ -172,6 +162,7 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
         }
     }
 
+    // Execute business logic handler callback
     void* res_ptr = windrpc_get_flat_res_struct(rpc_id);
     int32_t status = handler->execute(req_ptr, res_ptr, ctx);
     if (status != 0) {
@@ -182,14 +173,14 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
         return status;
     }
 
-    // REQUEST_ONLY: no response — skip TX entirely
+    // REQUEST_ONLY pattern: skip TX response
     if (!handler->has_response) {
         buffer->bytes_written = 0;
         LOG_DBG("REQUEST_ONLY RPC 0x%04X: no response sent", rpc_id);
         return 0;
     }
 
-    // Build response packet for REQUEST_RESPONSE pattern
+    // Build TX response packet
     uint8_t* tx_data = buffer->tx_data;
     if (!tx_data || buffer->tx_size < 6) {
         LOG_ERR("TX buffer size too small");
@@ -226,10 +217,7 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
     return 0;
 }
 
-/* ========================================================================== */
-/*               Transport-Agnostic Raw Packet Processing Adapter             */
-/* ========================================================================== */
-
+// Transport-agnostic raw packet processing entry point
 int32_t windrpc_process_packet(const uint8_t* rx_packet, uint16_t rx_len,
                                uint8_t* out_resp_buf, uint16_t max_resp_len, uint16_t* out_resp_len) {
     if (!rx_packet || rx_len < 6) {

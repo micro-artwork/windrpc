@@ -1,9 +1,3 @@
-/*
- * Copyright (c) 2026 WindRPC
- *
- * SPDX-License-Identifier: MIT
- */
-
 #ifndef WINDRPC_H
 #define WINDRPC_H
 
@@ -13,21 +7,21 @@ struct windrpc_device_info {
     char* serial_number;
 };
 
+// Packet RX/TX buffer descriptor
 struct windrpc_buffer {
     uint8_t* data;
     uint16_t size;
     uint16_t bytes_written;
 
-    uint8_t* tx_data;  // separate tx data buffer
-    uint16_t tx_size;  // separate tx data size
+    uint8_t* tx_data;
+    uint16_t tx_size;
 };
 
+// RPC execution context
 struct windrpc_context {
-    // request id
     uint8_t request_id[WINDRPC_REQUEST_ID_MAX_LEN];
     uint8_t request_id_len;
 
-    // error status
     int32_t status_code;
     char status_message[WINDRPC_STATUS_MESSAGE_MAX_LEN];
 
@@ -37,6 +31,7 @@ struct windrpc_context {
     const struct windrpc_handler_entry* handler;
 };
 
+// Complete RPC transaction
 struct windrpc_transaction {
     struct windrpc_buffer buffer;
     struct windrpc_context context;
@@ -51,15 +46,9 @@ void windrpc_set_error(struct windrpc_context* ctx, int32_t code, const char* me
 int32_t windrpc_process_packet(const uint8_t* rx_packet, uint16_t rx_len,
                                uint8_t* out_resp_buf, uint16_t max_resp_len, uint16_t* out_resp_len);
 
-/* -------------------------------------------------------------------------- */
-/*                      WindRPC Type Aliases (Shortcuts)                      */
-/* -------------------------------------------------------------------------- */
 // --WINDRPC_TYPEDEF_ALIASES
 
-/* -------------------------------------------------------------------------- */
-/*                      Notification Function Declarations                    */
-/* -------------------------------------------------------------------------- */
 // --WINDRPC_NOTIFY_DECLARATIONS
 
-#endif  // WINDRPC_H
+#endif
 

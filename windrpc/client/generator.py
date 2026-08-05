@@ -99,18 +99,13 @@ def generate(core_spec_path, user_spec_path, output_dir, lang="csharp", verbose=
         else:
             print("[Step 1/2] Skipping .proto generation (compile_proto=False)")
 
-        # Step 2: Generate cobs.js & WindRpcClient.js SDK (no external proto dependency)
-        print(f"[Step 2/2] Generating cobs.js & WindRpcClient.js SDK (inline Protobuf encoding)...")
-        cobs_file = os.path.join(output_dir, "cobs.js")
-        with open(cobs_file, 'w', encoding='utf-8') as f:
-            f.write(generate_cobs_js())
-
+        # Step 2: Generate WindRpcClient.js SDK (no external proto dependency)
+        print(f"[Step 2/2] Generating WindRpcClient.js SDK (inline Protobuf encoding & COBS)...")
         js_code = generate_js_client(spec_data, package_name)
         client_file = os.path.join(output_dir, "WindRpcClient.js")
         with open(client_file, 'w', encoding='utf-8') as f:
             f.write(js_code)
 
-        print(f"Generated {cobs_file}")
         print(f"Generated {client_file}")
         print(f"--- JS/TS Client SDK Generation Complete (no external dependencies) ---")
 

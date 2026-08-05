@@ -1,9 +1,3 @@
-/*
- * Copyright (c) 2026 WindRPC
- *
- * SPDX-License-Identifier: MIT
- */
-
 #ifndef WINDRPC_COMMON_H
 #define WINDRPC_COMMON_H
 
@@ -26,10 +20,6 @@
 #ifndef WINDRPC_STATUS_MESSAGE_MAX_LEN
 #define WINDRPC_STATUS_MESSAGE_MAX_LEN 64
 #endif
-
-/* -------------------------------------------------------------------------- */
-/*                              Logging Fallbacks                             */
-/* -------------------------------------------------------------------------- */
 
 #ifdef __ZEPHYR__
 #include <zephyr/logging/log.h>
@@ -58,10 +48,6 @@
 #define ARG_UNUSED(x) (void)(x)
 #endif
 #endif
-
-/* -------------------------------------------------------------------------- */
-/*                              Helper Macros                                 */
-/* -------------------------------------------------------------------------- */
 
 #define WINDRPC_CAT_IMPL(a, b) a##b
 #define WINDRPC_CAT(a, b) WINDRPC_CAT_IMPL(a, b)
@@ -105,10 +91,6 @@
 #define WINDRPC_SERVICE_RESPONSE_TYPE(service_name) \
     WINDRPC_CAT4(WINDRPC_PACKAGE_NAME, _windrpc_service_, service_name, _Response)
 
-/* -------------------------------------------------------------------------- */
-/*                               Dispatch Table                               */
-/* -------------------------------------------------------------------------- */
-
 struct windrpc_handler_entry {
     uint16_t rpc_id;
     int32_t (*execute)(const void *req, void *res, void *context);
@@ -119,5 +101,5 @@ struct windrpc_handler_entry {
 
 // --WINDRPC_RPC_INDEX_ENUM
 
-#endif  // WINDRPC_COMMON_H
+#endif
 
