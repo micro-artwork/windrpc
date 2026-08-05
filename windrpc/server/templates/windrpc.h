@@ -22,13 +22,6 @@ struct windrpc_buffer {
     uint16_t tx_size;  // separate tx data size
 };
 
-#if WINDRPC_ENVELOPE_MODE != WINDRPC_ENVELOPE_FLAT
-struct windrpc_operation {
-    windrpc_server_msg_t server_msg;
-    windrpc_client_msg_t client_msg;
-};
-#endif
-
 struct windrpc_context {
     // request id
     uint8_t request_id[WINDRPC_REQUEST_ID_MAX_LEN];
@@ -47,9 +40,6 @@ struct windrpc_context {
 struct windrpc_transaction {
     struct windrpc_buffer buffer;
     struct windrpc_context context;
-#if WINDRPC_ENVELOPE_MODE != WINDRPC_ENVELOPE_FLAT
-    struct windrpc_operation operation;
-#endif
 };
 
 int32_t windrpc_init(struct windrpc_device_info* device_info);

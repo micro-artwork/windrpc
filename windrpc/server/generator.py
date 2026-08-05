@@ -959,8 +959,6 @@ def generate(core_spec_path, user_spec_path, output_dir, mode=None, rtos="zephyr
 
     # copy / update windrpc_config.h
     file_path = os.path.join(output_dir, 'windrpc_config.h')
-    envelope_mode = spec_data.get('config', {}).get('envelope_mode', 'flat')
-    mode_macro_val = "WINDRPC_ENVELOPE_FLAT" if envelope_mode == 'flat' else "WINDRPC_ENVELOPE_NESTED"
 
     max_buffer_size, recommended_stack_size, max_payload = _calculate_stack_and_buffer_sizes(spec_data)
     stack_and_buffer_defines = (
@@ -977,15 +975,11 @@ def generate(core_spec_path, user_spec_path, output_dir, mode=None, rtos="zephyr
     config_content = read_lines(source_path)
     config_str = "".join(config_content)
     config_str = config_str.replace(
-        "#define WINDRPC_ENVELOPE_MODE WINDRPC_ENVELOPE_NESTED",
-        f"#define WINDRPC_ENVELOPE_MODE {mode_macro_val}"
-    )
-    config_str = config_str.replace(
         "// --WINDRPC_STACK_AND_BUFFER_DEFINES",
         stack_and_buffer_defines
     )
     write(file_path, config_str)
-    print(f"Generated/Updated {file_path} (envelope mode: {envelope_mode})")
+    print(f"Generated/Updated {file_path}")
 
     # generate windrpc.c
     windrpc_c_content = _generate_windrpc_c_content(spec_data, package_name)

@@ -100,9 +100,9 @@ def validate(spec_data, verbose=False, strict=False):
     config_spec = spec_data.get('config', {})
     if config_spec and isinstance(config_spec, dict):
         envelope_mode = config_spec.get('envelope_mode', 'flat')
-        if envelope_mode not in ('nested', 'flat'):
+        if envelope_mode != 'flat':
             errors.append(ValidationError(
-                f"Invalid envelope_mode '{envelope_mode}'. Must be 'nested' or 'flat'.",
+                f"Invalid envelope_mode '{envelope_mode}'. WindRPC standard requires 'flat' mode.",
                 'config.envelope_mode',
                 getattr(config_spec, '__line__', None)
             ))
