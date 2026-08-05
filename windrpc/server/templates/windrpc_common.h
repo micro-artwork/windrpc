@@ -64,11 +64,16 @@
 #define WINDRPC_CAT6_IMPL(a, b, c, d, e, f) a##b##c##d##e##f
 #define WINDRPC_CAT6(a, b, c, d, e, f) WINDRPC_CAT6_IMPL(a, b, c, d, e, f)
 
+#ifndef WINDRPC_CORE_VERSION_CODE
+#define WINDRPC_CORE_VERSION_CODE 10000
+#endif
+
+#ifndef WINDRPC_CORE_VERSION_NAME
+#define WINDRPC_CORE_VERSION_NAME "1.0.0"
+#endif
+
 #define WINDRPC_STATUS_CODE(name) \
     WINDRPC_CAT3(WINDRPC_PACKAGE_NAME, _windrpc_types_StatusCode_STATUS_CODE_, name)
-
-#define WINDRPC_VERSION_CODE \
-    WINDRPC_CAT3(WINDRPC_PACKAGE_NAME, _windrpc_types_PlatformVersionCode_, PLATFORM_VERSION_CODE)
 
 #define WINDRPC_COMMON_DEVICE_INFO_TYPE \
     WINDRPC_CAT(WINDRPC_PACKAGE_NAME, _windrpc_service_common_DeviceInfo)

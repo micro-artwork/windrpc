@@ -68,6 +68,13 @@ services:
   - id: 6
     name: common
     messages:
+      - name: PingResponse
+        description: 'Ping handshake response message containing framework & spec version information'
+        fields:
+          - { number: 1, name: core_version_code, type: uint32 }
+          - { number: 2, name: core_version_name, type: string, nanopb: { max_length: 32 } }
+          - { number: 3, name: spec_version_code, type: uint32 }
+          - { number: 4, name: spec_version_name, type: string, nanopb: { max_length: 32 } }
       - name: DeviceInfo
         description: 'Device Information Service (DIS) metadata message'
         fields:
@@ -81,7 +88,7 @@ services:
         name: ping
         type: REQUEST_RESPONSE
         command: types.Empty
-        result: uint32
+        result: PingResponse
       - id: 2
         name: get_device_info
         type: REQUEST_RESPONSE

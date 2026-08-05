@@ -167,6 +167,17 @@ export class WindRpcClient {
         const payLen = decoded[4] | (decoded[5] << 8);
         const payload = decoded.slice(6, 6 + payLen);
 
+        if (rpcId === 0x0601) {
+            try {
+                const pingResp = (typeof decodePingResponse === 'function') ? decodePingResponse(payload) : null;
+                if (pingResp) {
+                    console.log(`[WindRPC Ping Response] Core: v${pingResp.coreVersionName || '1.0.0'} (${pingResp.coreVersionCode || 10000}), Spec: v${pingResp.specVersionName || '1.0.0'} (${pingResp.specVersionCode || 10000})`);
+                }
+            } catch (err) {
+                // ignore
+            }
+        }
+
         const pending = this._pendingRequests.get(seqId);
         if (pending) {
             this._pendingRequests.delete(seqId);

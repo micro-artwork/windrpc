@@ -407,7 +407,7 @@ def _generate_flat_dispatch_table(spec_data, package_name):
     content = []
 
     content.append("// Core service handler prototypes for flat mode\n")
-    content.append("int32_t windrpc_on_ping(const void *req, uint32_t *res, void *context);\n")
+    content.append("int32_t windrpc_on_ping(const void *req, rpc_common_PingResponse_t *res, void *context);\n")
     content.append("int32_t windrpc_on_get_device_info(const void *req, rpc_common_DeviceInfo_t *res, void *context);\n\n")
 
     content.append("// Service RPC handler prototypes for flat mode\n")
@@ -424,7 +424,8 @@ def _generate_flat_dispatch_table(spec_data, package_name):
             content.append(f"int32_t {exec_name}({cmd_arg}, {res_arg}, void *context);\n")
 
     content.append("\n// Flat req/res static buffers\n")
-    content.append("static uint32_t res_common_ping;\n")
+    content.append("static rpc_types_Empty_t req_common_empty;\n")
+    content.append("static rpc_common_PingResponse_t res_common_ping;\n")
     content.append("static rpc_common_DeviceInfo_t res_common_get_device_info;\n")
     for service in services:
         svc_name = service['name']
@@ -442,29 +443,34 @@ def _generate_flat_dispatch_table(spec_data, package_name):
 
     content.append("\n")
 
-    content.append("static void *windrpc_get_flat_req_struct(uint16_t rpc_id) {\n")
+    content.append("void* windrpc_get_flat_req_struct(uint16_t rpc_id) {\n")
     content.append("    switch (rpc_id) {\n")
+    content.append("        case 0x0601:\n")
+    content.append("        case 0x0602:\n")
+    content.append("            memset(&req_common_empty, 0, sizeof(req_common_empty));\n")
+    content.append("            return &req_common_empty;\n")
     for service in services:
         svc_name = service['name']
         if svc_name == 'common':  # handled by core
             continue
         svc_id = service['id']
         for rpc in service.get('rpcs', []):
+            info = _get_rpc_types(rpc, svc_name, package_name)
+            if info['cmd_type'] == 'void':
+                continue
             rpc_name = rpc['name']
             rpc_id = rpc['id']
             combined_id = (svc_id << 8) | rpc_id
-            info = _get_rpc_types(rpc, svc_name, package_name)
-            if info['cmd_type'] != 'void':
-                content.append(f"        case 0x{combined_id:04X}:\n")
-                content.append(f"            memset(&req_{svc_name}_{rpc_name}, 0, sizeof(req_{svc_name}_{rpc_name}));\n")
-                content.append(f"            return &req_{svc_name}_{rpc_name};\n")
+            content.append(f"        case 0x{combined_id:04X}:\n")
+            content.append(f"            memset(&req_{svc_name}_{rpc_name}, 0, sizeof(req_{svc_name}_{rpc_name}));\n")
+            content.append(f"            return &req_{svc_name}_{rpc_name};\n")
     content.append("        default: return NULL;\n")
     content.append("    }\n}\n\n")
 
-    content.append("static void *windrpc_get_flat_res_struct(uint16_t rpc_id) {\n")
+    content.append("void* windrpc_get_flat_res_struct(uint16_t rpc_id) {\n")
     content.append("    switch (rpc_id) {\n")
     content.append("        case 0x0601:\n")
-    content.append("            res_common_ping = 0;\n")
+    content.append("            memset(&res_common_ping, 0, sizeof(res_common_ping));\n")
     content.append("            return &res_common_ping;\n")
     content.append("        case 0x0602:\n")
     content.append("            memset(&res_common_get_device_info, 0, sizeof(res_common_get_device_info));\n")
@@ -494,7 +500,7 @@ def _generate_flat_dispatch_table(spec_data, package_name):
     content.append("        .execute = (int32_t (*)(const void *, void *, void *))windrpc_on_ping,\n")
     content.append("        .has_response = true,\n")
     content.append(f"        .req_fields = {prefix}_windrpc_types_Empty_fields,\n")
-    content.append("        .res_fields = NULL\n")
+    content.append(f"        .res_fields = {prefix}_windrpc_service_common_PingResponse_fields\n")
     content.append("    },\n")
     content.append("    {\n")
     content.append("        .rpc_id = 0x0602,\n")
@@ -960,6 +966,21 @@ def generate(core_spec_path, user_spec_path, output_dir, mode=None, rtos="zephyr
     # copy / update windrpc_config.h
     file_path = os.path.join(output_dir, 'windrpc_config.h')
 
+    info = spec_data.get('info', {})
+    spec_ver_name = info.get('version_name') or info.get('version') or "1.0.0"
+    spec_ver_code = info.get('version_code')
+    if spec_ver_code is None:
+        try:
+            parts = [int(p) for p in str(spec_ver_name).split('-')[0].split('.')]
+            if len(parts) >= 3:
+                spec_ver_code = parts[0] * 10000 + parts[1] * 100 + parts[2]
+            elif len(parts) == 2:
+                spec_ver_code = parts[0] * 10000 + parts[1] * 100
+            else:
+                spec_ver_code = parts[0] * 10000
+        except Exception:
+            spec_ver_code = 10000
+
     max_buffer_size, recommended_stack_size, max_payload = _calculate_stack_and_buffer_sizes(spec_data)
     stack_and_buffer_defines = (
         f"/* Dynamically Calculated Stack & Buffer Sizes based on Specification */\n"
@@ -968,6 +989,12 @@ def generate(core_spec_path, user_spec_path, output_dir, mode=None, rtos="zephyr
         f"#endif\n\n"
         f"#ifndef WINDRPC_RECOMMENDED_STACK_SIZE\n"
         f"#define WINDRPC_RECOMMENDED_STACK_SIZE {recommended_stack_size} // Recommended Thread Stack Size\n"
+        f"#endif\n\n"
+        f"#ifndef WINDRPC_SPEC_VERSION_CODE\n"
+        f"#define WINDRPC_SPEC_VERSION_CODE {spec_ver_code}\n"
+        f"#endif\n\n"
+        f"#ifndef WINDRPC_SPEC_VERSION_NAME\n"
+        f"#define WINDRPC_SPEC_VERSION_NAME \"{spec_ver_name}\"\n"
         f"#endif"
     )
 

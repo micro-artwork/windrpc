@@ -13,10 +13,15 @@ int32_t windrpc_init(struct windrpc_device_info* info) {
     return 0;
 }
 
-int32_t windrpc_on_ping(const void* req, uint32_t* res, void* context) {
+int32_t windrpc_on_ping(const void* req, rpc_common_PingResponse_t* res, void* context) {
     ARG_UNUSED(req);
     LOG_DBG("Execute: ping");
-    if (res) *res = WINDRPC_VERSION_CODE;
+    if (res == NULL) return -1;
+    memset(res, 0, sizeof(*res));
+    res->core_version_code = WINDRPC_CORE_VERSION_CODE;
+    strncpy(res->core_version_name, WINDRPC_CORE_VERSION_NAME, sizeof(res->core_version_name) - 1);
+    res->spec_version_code = WINDRPC_SPEC_VERSION_CODE;
+    strncpy(res->spec_version_name, WINDRPC_SPEC_VERSION_NAME, sizeof(res->spec_version_name) - 1);
     return 0;
 }
 
@@ -200,13 +205,6 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
             send_flat_error_response(buffer, seq_id, WINDRPC_STATUS_CODE(INTERNAL), "Failed to encode response");
             return -1;
         }
-    } else if (res_ptr && rpc_id == 0x0601) {
-        uint32_t ver = *(uint32_t *)res_ptr;
-        tx_data[6] = (uint8_t)(ver & 0xFF);
-        tx_data[7] = (uint8_t)((ver >> 8) & 0xFF);
-        tx_data[8] = (uint8_t)((ver >> 16) & 0xFF);
-        tx_data[9] = (uint8_t)((ver >> 24) & 0xFF);
-        ostream.bytes_written = 4;
     }
 
     tx_data[4] = (uint8_t)(ostream.bytes_written & 0xFF);
