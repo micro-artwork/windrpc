@@ -1,4 +1,7 @@
-platform_version_code: 1
+info:
+  version_code: 100
+  version_name: "0.1.0"
+
 
 types:
   enums:

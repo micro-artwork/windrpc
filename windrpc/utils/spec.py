@@ -31,9 +31,10 @@ def normalize_rpc(rpc):
 def merge_specs(core_spec, user_spec):
     """Merges core_spec and user_spec into a single unified specification dictionary."""
     merged = {
-        'platform_version_code': user_spec.get('platform_version_code', core_spec.get('platform_version_code')),
+        'core_info': core_spec.get('info', {}) or {},
         'package': user_spec.get('package', core_spec.get('package')),
-        'config': user_spec.get('config', {}),
+        'config': user_spec.get('config') or {},
+        'info': user_spec.get('info') or {},
         'types': {
             'enums': [],
             'messages': []

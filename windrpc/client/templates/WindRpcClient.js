@@ -171,7 +171,7 @@ export class WindRpcClient {
             try {
                 const pingResp = (typeof decodePingResponse === 'function') ? decodePingResponse(payload) : null;
                 if (pingResp) {
-                    console.log(`[WindRPC Ping Response] Core: v${pingResp.coreVersionName || '1.0.0'} (${pingResp.coreVersionCode || 10000}), Spec: v${pingResp.specVersionName || '1.0.0'} (${pingResp.specVersionCode || 10000})`);
+                    console.log(`[WindRPC Ping Response] Core: v${pingResp.coreVersionName || '0.1.0'} (${pingResp.coreVersionCode ?? 100}), Spec: v${pingResp.specVersionName || '1.0.0'} (${pingResp.specVersionCode ?? 10000})`);
                 }
             } catch (err) {
                 // ignore

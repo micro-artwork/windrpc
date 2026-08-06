@@ -140,8 +140,6 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
     uint16_t seq_id = (uint16_t)(rx_data[2] | ((uint16_t)rx_data[3] << 8));
     uint16_t payload_len = (uint16_t)(rx_data[4] | ((uint16_t)rx_data[5] << 8));
 
-    snprintf((char*)ctx->request_id, WINDRPC_REQUEST_ID_MAX_LEN, "%u", seq_id);
-    ctx->request_id_len = (uint8_t)strlen((char*)ctx->request_id);
 
     const struct windrpc_handler_entry* handler = windrpc_find_flat_handler(rpc_id);
     if (!handler) {

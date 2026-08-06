@@ -184,9 +184,6 @@ def generate_types_proto(spec_data, package_prefix):
     content = [get_generated_file_header(), 'syntax = "proto3";\n',
                f"package {package_prefix}.windrpc.types;\n"]
     resolved_type_names = []
-    platform_version_code = spec_data.get('platform_version_code', 0)
-    content.append(
-        f"enum PlatformVersionCode {{ PLATFORM_VERSION_CODE_UNKNOWN = 0; PLATFORM_VERSION_CODE = {platform_version_code}; }}\n")
     types_spec = spec_data.get('types', {})
     content.append(generate_enums_from_spec(types_spec.get('enums', [])))
     for msg_def in types_spec.get('messages', []):
@@ -327,20 +324,6 @@ def generate_service_proto(service_spec, spec_data, package_prefix):
             resolved_type_names.append(event_type)
             event_rpcs.append(f"    {event_type} {rpc_name} = {rpc_id};")
 
-    envelope_mode = spec_data.get('config', {}).get('envelope_mode', 'flat')
-    if envelope_mode != 'flat':
-        if command_rpcs:
-            content.extend(["message Request {", "  oneof command {"])
-            content.extend(command_rpcs)
-            content.extend(["  }", "}\n"])
-        if result_rpcs:
-            content.extend(["message Response {", "  oneof result {"])
-            content.extend(result_rpcs)
-            content.extend(["  }", "}\n"])
-        if event_rpcs:
-            content.extend(["message Notification {", "  oneof event {"])
-            content.extend(event_rpcs)
-            content.extend(["  }", "}\n"])
 
     import_paths = generate_import_paths(resolved_type_names)
     if len(import_paths) > 0:
@@ -380,9 +363,6 @@ def _format_rpc_doc_comment(svc_name, svc_id, rpc):
 
 def generate_windrpc_proto(spec_data, package_prefix):
 
-    use_request_id = True
-    envelope_mode = spec_data.get('config', {}).get('envelope_mode', 'flat')
-
     content = [get_generated_file_header(), 'syntax = "proto3";\n',
                f'package {package_prefix}.windrpc.core;\n']
     for svc in spec_data['services']:
@@ -409,50 +389,10 @@ def generate_windrpc_proto(spec_data, package_prefix):
                     f"  RPC_ID_{svc_name.upper()}_{rpc['name'].upper()} = {combine_ids(svc_id, rpc['id'])};\n")
     content.append('}\n')
 
-    if envelope_mode != 'flat':
-        content.extend([
-            "message ClientMessage {",
-            "  oneof payload {",
-            "    Request request = 1;",
-            "  }",
-            "}\n",
-            "message Request {",
-            "  bytes request_id = 1;" if use_request_id else "",
-            "  oneof service {"
-        ])
-        for svc in spec_data['services']:
-            if svc.get('rpcs'):
-                content.append(
-                    f"    {package_prefix}.windrpc.service.{svc['name']}.Request {svc['name']} = {svc['id']};")
-        content.extend(["  }", "}\n"])
-        content.extend([
-            "message ServerMessage {",
-            "  oneof payload {",
-            "    Response response = 1;",
-            "    Notification notification = 2;",
-            "  }",
-            "}\n",
-            "message Response {",
-            "  bytes request_id = 1;" if use_request_id else "",
-            "  oneof service {",
-            f"    {package_prefix}.windrpc.types.Status status = 5;"
-        ])
-        for svc in spec_data['services']:
-            if any(m.get('type', '').upper() in ['REQUEST_RESPONSE', 'NOTIFICATION'] for m in svc.get('rpcs', [])):
-                content.append(
-                    f"    {package_prefix}.windrpc.service.{svc['name']}.Response {svc['name']} = {svc['id']};")
-        content.extend(["  }", "}\n"])
-        content.extend(["message Notification {", "  oneof service {"])
-        for svc in spec_data['services']:
-            if any(m.get('type', '').upper() == 'NOTIFICATION' for m in svc.get('rpcs', [])):
-                content.append(
-                    f"    {package_prefix}.windrpc.service.{svc['name']}.Notification {svc['name']} = {svc['id']};")
-        content.extend(["  }", "}\n"])
-
     return "\n".join(content)
 
 
-def generate(core_spec_path, user_spec_path, output_dir, mode=None, verbose=False, strict=False):
+def generate(core_spec_path, user_spec_path, output_dir, verbose=False, strict=False):
     try:
         with open(core_spec_path, 'r', encoding='utf-8') as f:
             core_spec_data = yaml.load(f, Loader=LineNumberLoader)
@@ -466,11 +406,6 @@ def generate(core_spec_path, user_spec_path, output_dir, mode=None, verbose=Fals
         sys.exit(1)
 
     spec_data = merge_specs(core_spec_data, user_spec_data)
-
-    if mode:
-        if 'config' not in spec_data or not isinstance(spec_data['config'], dict):
-            spec_data['config'] = {}
-        spec_data['config']['envelope_mode'] = mode
 
     spec_validator.validate(spec_data, verbose=verbose, strict=strict)
     print("YAML Specification validation successful.")

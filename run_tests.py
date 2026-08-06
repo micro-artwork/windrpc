@@ -56,11 +56,11 @@ def main():
         yaml.dump(spec_data, f, sort_keys=False)
     print(f"  - Applied random package name for unit test: '{random_package}'")
     
-    gen_proto_flat_cmd = [sys.executable, "windrpc/windrpc_gen.py", "proto", "-s", spec_path, "-o", flat_gen_dir, "-m", "flat"]
+    gen_proto_flat_cmd = [sys.executable, "windrpc/windrpc_gen.py", "proto", "-s", spec_path, "-o", flat_gen_dir]
     if not run_step("Generating Flat Proto Files", gen_proto_flat_cmd, cwd=root_dir):
         sys.exit(1)
 
-    gen_server_flat_cmd = [sys.executable, "windrpc/windrpc_gen.py", "server", "-s", spec_path, "-o", flat_gen_dir, "-m", "flat"]
+    gen_server_flat_cmd = [sys.executable, "windrpc/windrpc_gen.py", "server", "-s", spec_path, "-o", flat_gen_dir]
     if not run_step("Generating C Server Code (Flat)", gen_server_flat_cmd, cwd=root_dir):
         sys.exit(1)
 

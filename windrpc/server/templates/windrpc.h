@@ -19,9 +19,6 @@ struct windrpc_buffer {
 
 // RPC execution context
 struct windrpc_context {
-    uint8_t request_id[WINDRPC_REQUEST_ID_MAX_LEN];
-    uint8_t request_id_len;
-
     int32_t status_code;
     char status_message[WINDRPC_STATUS_MESSAGE_MAX_LEN];
 

@@ -320,6 +320,22 @@ def _generate_common_header_content(spec_data, package_name):
         header_paths.append(
             f'#include "{package_name}/windrpc/service/{svc_name}.pb.h"\n')
 
+    # Resolve core version from core_info (populated by merge_specs from core_spec.yml info)
+    core_info = spec_data.get('core_info', {})
+    core_ver_name = core_info.get('version_name') or core_info.get('version') or '0.1.0'
+    core_ver_code = core_info.get('version_code')
+    if core_ver_code is None:
+        try:
+            parts = [int(p) for p in str(core_ver_name).split('-')[0].split('.')]
+            if len(parts) >= 3:
+                core_ver_code = parts[0] * 10000 + parts[1] * 100 + parts[2]
+            elif len(parts) == 2:
+                core_ver_code = parts[0] * 10000 + parts[1] * 100
+            else:
+                core_ver_code = parts[0] * 10000
+        except Exception:
+            core_ver_code = 100
+
     content = []
 
     try:
@@ -333,6 +349,10 @@ def _generate_common_header_content(spec_data, package_name):
                 content.append(line)
                 content.append(
                     f"#define WINDRPC_PACKAGE_NAME {package_name}\n")
+            elif 'WINDRPC_CORE_VERSION_CODE' in line and '#define' in line:
+                content.append(f"#define WINDRPC_CORE_VERSION_CODE {core_ver_code}\n")
+            elif 'WINDRPC_CORE_VERSION_NAME' in line and '#define' in line:
+                content.append(f"#define WINDRPC_CORE_VERSION_NAME \"{core_ver_name}\"\n")
             elif '--WINDRPC_RPC_INDEX_ENUM' in line:
                 content.append(line)
                 content.append(_generate_rpc_index_enum(spec_data))
@@ -735,7 +755,6 @@ def _generate_callbacks_skeleton(spec_data, package_name):
 
 def _generate_notify_skeleton(spec_data, package_name):
     prefix = package_name.replace('/', '_').replace('-', '_')
-    envelope_mode = spec_data.get('config', {}).get('envelope_mode', 'flat')
     services = spec_data.get('services', [])
 
     content = []
@@ -776,53 +795,33 @@ def _generate_notify_skeleton(spec_data, package_name):
                     f" * @brief Notify helper for event: {rpc_name} (Event ID: 0x{event_combined_id:04X})\n")
                 content.append(" */\n")
 
-                if envelope_mode == 'flat':
-                    content.append(
-                        f"int32_t windrpc_notify_{rpc_name}(const {c_type} *data, struct windrpc_transaction *txn) {{\n")
-                    content.append(f"    if (!data || !txn) return -1;\n")
-                    content.append(f"    struct windrpc_buffer *buffer = &txn->buffer;\n")
-                    content.append(f"    uint8_t *tx_data = buffer->tx_data;\n")
-                    content.append(f"    if (buffer->tx_size < 6) return -1;\n\n")
-                    content.append(f"    uint16_t event_id = 0x{event_combined_id:04X};\n")
-                    content.append(f"    tx_data[0] = (uint8_t)(event_id & 0xFF);\n")
-                    content.append(f"    tx_data[1] = (uint8_t)((event_id >> 8) & 0xFF);\n")
-                    content.append(f"    tx_data[2] = 0; // seq_id = 0 for server push notification\n")
-                    content.append(f"    tx_data[3] = 0;\n\n")
-                    content.append(
-                        f"    pb_ostream_t ostream = pb_ostream_from_buffer(&tx_data[6], buffer->tx_size - 6);\n")
-                    content.append(
-                        f"    if (!pb_encode(&ostream, {fields_macro}, data)) {{\n")
-                    content.append(
-                        f"        LOG_ERR(\"Failed to encode notification event '{rpc_name}': %s\", PB_GET_ERROR(&ostream));\n")
-                    content.append(f"        buffer->bytes_written = 0;\n")
-                    content.append(f"        return -1;\n")
-                    content.append(f"    }}\n\n")
-                    content.append(f"    tx_data[4] = (uint8_t)(ostream.bytes_written & 0xFF);\n")
-                    content.append(f"    tx_data[5] = (uint8_t)((ostream.bytes_written >> 8) & 0xFF);\n")
-                    content.append(f"    buffer->bytes_written = 6 + (uint16_t)ostream.bytes_written;\n")
-                    content.append(
-                        f"    LOG_DBG(\"Encoded flat notification '{rpc_name}'. Total Size: %u bytes\", buffer->bytes_written);\n")
-                    content.append(f"    return 0;\n")
-                    content.append(f"}}\n\n")
-                else:
-                    content.append(
-                        f"int32_t windrpc_notify_{rpc_name}(const {c_type} *data, struct windrpc_transaction *txn) {{\n")
-                    content.append(f"    if (!data || !txn) return -1;\n")
-                    content.append(
-                        f"    {prefix}_windrpc_core_ServerMessage notif_msg = {prefix}_windrpc_core_ServerMessage_init_zero;\n")
-                    content.append(
-                        f"    notif_msg.which_payload = {prefix}_windrpc_core_ServerMessage_notification_tag;\n")
-                    content.append(
-                        f"    {prefix}_windrpc_core_Notification *notif = &notif_msg.payload.notification;\n")
-                    content.append(
-                        f"    notif->which_service = {prefix}_windrpc_core_Notification_{svc_name}_tag;\n")
-                    content.append(
-                        f"    notif->service.{svc_name}.which_event = {prefix}_windrpc_service_{svc_name}_Notification_{rpc_name}_tag;\n")
-                    content.append(
-                        f"    notif->service.{svc_name}.event.{rpc_name} = *data;\n\n")
-                    content.append(f"    txn->operation.server_msg = notif_msg;\n")
-                    content.append(f"    return windrpc_notify(txn);\n")
-                    content.append(f"}}\n\n")
+                content.append(
+                    f"int32_t windrpc_notify_{rpc_name}(const {c_type} *data, struct windrpc_transaction *txn) {{\n")
+                content.append(f"    if (!data || !txn) return -1;\n")
+                content.append(f"    struct windrpc_buffer *buffer = &txn->buffer;\n")
+                content.append(f"    uint8_t *tx_data = buffer->tx_data;\n")
+                content.append(f"    if (buffer->tx_size < 6) return -1;\n\n")
+                content.append(f"    uint16_t event_id = 0x{event_combined_id:04X};\n")
+                content.append(f"    tx_data[0] = (uint8_t)(event_id & 0xFF);\n")
+                content.append(f"    tx_data[1] = (uint8_t)((event_id >> 8) & 0xFF);\n")
+                content.append(f"    tx_data[2] = 0; // seq_id = 0 for server push notification\n")
+                content.append(f"    tx_data[3] = 0;\n\n")
+                content.append(
+                    f"    pb_ostream_t ostream = pb_ostream_from_buffer(&tx_data[6], buffer->tx_size - 6);\n")
+                content.append(
+                    f"    if (!pb_encode(&ostream, {fields_macro}, data)) {{\n")
+                content.append(
+                    f"        LOG_ERR(\"Failed to encode notification event '{rpc_name}': %s\", PB_GET_ERROR(&ostream));\n")
+                content.append(f"        buffer->bytes_written = 0;\n")
+                content.append(f"        return -1;\n")
+                content.append(f"    }}\n\n")
+                content.append(f"    tx_data[4] = (uint8_t)(ostream.bytes_written & 0xFF);\n")
+                content.append(f"    tx_data[5] = (uint8_t)((ostream.bytes_written >> 8) & 0xFF);\n")
+                content.append(f"    buffer->bytes_written = 6 + (uint16_t)ostream.bytes_written;\n")
+                content.append(
+                    f"    LOG_DBG(\"Encoded flat notification '{rpc_name}'. Total Size: %u bytes\", buffer->bytes_written);\n")
+                content.append(f"    return 0;\n")
+                content.append(f"}}\n\n")
 
     if not has_notif:
         content.append(
@@ -908,7 +907,7 @@ def _calculate_stack_and_buffer_sizes(spec_data):
     return max_buffer_size, recommended_stack_size, max_payload
 
 
-def generate(core_spec_path, user_spec_path, output_dir, mode=None, rtos="zephyr", verbose=False):
+def generate(core_spec_path, user_spec_path, output_dir, rtos="zephyr", verbose=False):
     """
     주어진 YAML 스펙 파일들로부터 .proto와 .options 파일들을 생성합니다.
     """
@@ -935,10 +934,6 @@ def generate(core_spec_path, user_spec_path, output_dir, mode=None, rtos="zephyr
         sys.exit(1)
 
     spec_data = merge_specs(core_spec_data, user_spec_data)
-    if mode:
-        if 'config' not in spec_data or not isinstance(spec_data['config'], dict):
-            spec_data['config'] = {}
-        spec_data['config']['envelope_mode'] = mode
 
     spec_validator.validate(spec_data, verbose=verbose)
     print("YAML Specification validation successful.")

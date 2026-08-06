@@ -1,7 +1,4 @@
-package: pkg_o8gdbu
-config:
-  request_id:
-    enable: true
+package: pkg_bumf60
 services:
 - id: 11
   name: led

@@ -51,7 +51,6 @@ def handle_proto_command(args):
         core_spec_path=core_spec_path,
         user_spec_path=user_spec_path,
         output_dir=output_dir,
-        mode=args.mode,
         verbose=args.verbose,
         strict=args.strict
     )
@@ -67,7 +66,6 @@ def handle_server_command(args):
         core_spec_path=core_spec_path,
         user_spec_path=user_spec_path,
         output_dir=output_dir,
-        mode=args.mode,
         rtos=args.rtos,
         verbose=args.verbose)
     print("--- RPC Server Generation Finished ---")
@@ -105,8 +103,6 @@ def main():
     proto_parser.add_argument(
         '-o', '--output', default='protos', help='Output directory for generated files.')
     proto_parser.add_argument(
-        '-m', '--mode', choices=['flat'], default='flat', help='Envelope mode: flat (standard).')
-    proto_parser.add_argument(
         '-v', '--verbose', action='store_true', help='Enable verbose output.')
     proto_parser.add_argument(
         '--strict', action='store_true',
@@ -122,8 +118,6 @@ def main():
         '-s', '--user-spec', default='user_spec.yml', help='Input user-defined YAML spec file.')
     server_parser.add_argument(
         '-o', '--output', default='server', help='Output directory for generated files.')
-    server_parser.add_argument(
-        '-m', '--mode', choices=['flat'], default='flat', help='Envelope mode: flat (standard).')
     server_parser.add_argument(
         '-r', '--rtos', choices=['zephyr', 'none'], default='zephyr', help='Target RTOS (default: zephyr).')
     server_parser.add_argument(

@@ -49,7 +49,6 @@ def generate(core_spec_path, user_spec_path, output_dir, lang="csharp", verbose=
             core_spec_path=core_spec_path,
             user_spec_path=user_spec_path,
             output_dir=protos_dir,
-            mode=None,
             verbose=verbose
         )
 
@@ -93,7 +92,6 @@ def generate(core_spec_path, user_spec_path, output_dir, lang="csharp", verbose=
                 core_spec_path=core_spec_path,
                 user_spec_path=user_spec_path,
                 output_dir=protos_dir,
-                mode=None,
                 verbose=verbose
             )
         else:

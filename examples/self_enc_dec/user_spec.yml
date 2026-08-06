@@ -1,9 +1,5 @@
 package: bitnari
 
-config:
-  request_id: # actually type is bytes (type fixed)
-    enable: false # true: convert to value, false: ignoring
-    # convert_to: none # uint32 (use  only 4bytes), string (length <= 36), none: use raw bytes
 
 # types:
 #   messages:
