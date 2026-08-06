@@ -50,7 +50,7 @@ def generate_common_header_content(spec_data, package_name, verbose=False):
                 # 조건에 해당하지 않는 라인은 그대로 추가
                 content.append(line)
     except FileNotFoundError:
-        print(f"오류: '{file_path}' 파일을 찾을 수 없습니다.")
+        print(f"Error: File '{file_path}' not found.", file=sys.stderr)
 
     return "".join(content)
 

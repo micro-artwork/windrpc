@@ -907,9 +907,9 @@ def _calculate_stack_and_buffer_sizes(spec_data):
     return max_buffer_size, recommended_stack_size, max_payload
 
 
-def generate(core_spec_path, user_spec_path, output_dir, rtos="zephyr", verbose=False):
+def generate(core_spec_path, user_spec_path, output_dir, verbose=False):
     """
-    주어진 YAML 스펙 파일들로부터 .proto와 .options 파일들을 생성합니다.
+    Generates RPC server C code from YAML specification files.
     """
     try:
         with open(core_spec_path, 'r', encoding='utf-8') as f:
