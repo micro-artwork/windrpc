@@ -1,4 +1,4 @@
-package: pkg_ybauuz
+package: pkg_2trelo
 services:
 - id: 11
   name: led

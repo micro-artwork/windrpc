@@ -11,11 +11,12 @@ from utils.protoc_resolver import ProtocResolver
 from proto import generator as proto_generator
 from .csharp import generate_csharp_client
 from .js import generate_js_client, generate_cobs_js
+from .python import generate_python_client
 
 
 def generate(core_spec_path, user_spec_path, output_dir, lang="csharp", verbose=False, compile_proto=True):
     """
-    Generates client SDK source code (C# / JavaScript / etc.) based on YAML specification.
+    Generates client SDK source code (C# / JavaScript / Python / etc.) based on YAML specification.
     Includes automatic .proto generation and protoc data class compilation.
     """
     try:
@@ -107,6 +108,54 @@ def generate(core_spec_path, user_spec_path, output_dir, lang="csharp", verbose=
         print(f"Generated {client_file}")
         print(f"--- JS/TS Client SDK Generation Complete (no external dependencies) ---")
 
+    elif lang_lower in ('python', 'py'):
+        print(f"\n--- Starting One-Stop Python Client Generation for package '{package_name}' ---")
+
+        # Step 1: Generate .proto files under Protos subfolder
+        protos_dir = os.path.join(output_dir, "Protos")
+        os.makedirs(protos_dir, exist_ok=True)
+        print(f"[Step 1/3] Generating .proto files into '{protos_dir}'...")
+        proto_generator.generate(
+            core_spec_path=core_spec_path,
+            user_spec_path=user_spec_path,
+            output_dir=protos_dir,
+            verbose=verbose
+        )
+
+        # Step 2: Compile .proto to Python modules using protoc
+        if compile_proto:
+            gen_py_dir = os.path.join(output_dir, "Generated")
+            os.makedirs(gen_py_dir, exist_ok=True)
+            print(f"[Step 2/3] Resolving protoc and compiling .proto to Python modules into '{gen_py_dir}'...")
+            proto_files = glob.glob(os.path.join(protos_dir, "**", "*.proto"), recursive=True)
+            if not proto_files:
+                print("Error: No .proto files found to compile.", file=sys.stderr)
+                sys.exit(1)
+
+            ProtocResolver.compile(
+                proto_files=proto_files,
+                proto_imports=[protos_dir],
+                out_dir=gen_py_dir,
+                lang="python"
+            )
+
+            # Create empty __init__.py files for clean Python module imports
+            for root, dirs, files in os.walk(gen_py_dir):
+                init_file = os.path.join(root, "__init__.py")
+                if not os.path.exists(init_file):
+                    open(init_file, 'a').close()
+        else:
+            print("[Step 2/3] Skipping protoc execution (compile_proto=False)")
+
+        # Step 3: Generate WindRpcClient.py SDK
+        print(f"[Step 3/3] Generating WindRpcClient.py Client SDK...")
+        py_code = generate_python_client(spec_data, package_name)
+        out_file = os.path.join(output_dir, "WindRpcClient.py")
+        with open(out_file, 'w', encoding='utf-8') as f:
+            f.write(py_code)
+        print(f"Generated {out_file}")
+        print(f"--- Python Client SDK & Data Classes Generation Complete ---")
+
     else:
-        print(f"Error: Unsupported client language '{lang}'. Supported: 'csharp', 'js', 'ts'", file=sys.stderr)
+        print(f"Error: Unsupported client language '{lang}'. Supported: 'csharp', 'js', 'ts', 'python'", file=sys.stderr)
         sys.exit(1)

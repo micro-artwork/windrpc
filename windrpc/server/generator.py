@@ -690,7 +690,9 @@ def _generate_callbacks_skeleton(spec_data, package_name):
         " * @note Copy this file as windrpc_callbacks.c and implement your logic.\n")
     content.append(" */\n\n")
     content.append('#include "windrpc.h"\n')
+    content.append('#ifdef __ZEPHYR__\n')
     content.append('#include <zephyr/logging/log.h>\n')
+    content.append('#endif\n')
     content.append('#include <stdio.h>\n\n')
     content.append('LOG_MODULE_REGISTER(windrpc_callbacks, LOG_LEVEL_INF);\n\n')
 

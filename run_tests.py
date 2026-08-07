@@ -143,6 +143,21 @@ def main():
     else:
         print("  - Warning: 'dotnet' executable or C# project not found. Skipping C# dotnet test.")
 
+    # Step 7: Python Client SDK Generation and Unit Tests
+    print_banner("Step 7: Testing Python Client SDK Generation & Execution")
+    gen_py_dir = os.path.join(root_dir, "tests", "generated_py")
+    if os.path.exists(gen_py_dir):
+        shutil.rmtree(gen_py_dir)
+    os.makedirs(gen_py_dir, exist_ok=True)
+
+    gen_client_py_cmd = [sys.executable, "windrpc/windrpc_gen.py", "client", "-s", spec_path, "-o", gen_py_dir, "--lang", "python"]
+    if not run_step("Generating Python Client SDK", gen_client_py_cmd, cwd=root_dir):
+        sys.exit(1)
+
+    py_client_test_cmd = [sys.executable, "tests/test_python_client.py"]
+    if not run_step("Executing Python Client Unit Tests", py_client_test_cmd, cwd=root_dir):
+        sys.exit(1)
+
     print_banner("ALL WINDRPC INTEGRATED TESTS PASSED SUCCESSFULLY! 🚀")
 
 if __name__ == "__main__":

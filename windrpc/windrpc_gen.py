@@ -131,7 +131,7 @@ def main():
     client_parser.add_argument(
         '-o', '--output', default='client', help='Output directory for generated files.')
     client_parser.add_argument(
-        '-l', '--lang', default='csharp', help='Target client language (default: csharp).')
+        '-l', '--lang', default='csharp', help='Target client language (default: csharp, options: csharp, js, python).')
     client_parser.add_argument(
         '-v', '--verbose', action='store_true', help='Enable verbose output.')
     client_parser.set_defaults(func=handle_client_command)
