@@ -146,10 +146,10 @@ WindRPC CLI 도구는 Git 저장소를 통해 직접 설치할 수 있습니다:
 
 ```bash
 # Git 레포지토리 직접 설치
-pip install git+https://github.com/windrpc/windrpc.git
+pip install git+https://github.com/micro-artwork/windrpc.git
 
 # 또는 레포지토리 클론 후 로컬 개발 모드 설치
-git clone https://github.com/windrpc/windrpc.git
+git clone https://github.com/micro-artwork/windrpc.git
 cd windrpc
 pip install -e .
 ```

@@ -150,10 +150,10 @@ WindRPC CLI tool can be installed directly from the Git repository:
 
 ```bash
 # Direct installation from Git repository
-pip install git+https://github.com/windrpc/windrpc.git
+pip install git+https://github.com/micro-artwork/windrpc.git
 
 # Or clone the repository and install in editable mode
-git clone https://github.com/windrpc/windrpc.git
+git clone https://github.com/micro-artwork/windrpc.git
 cd windrpc
 pip install -e .
 ```
