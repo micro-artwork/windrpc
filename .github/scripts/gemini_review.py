@@ -19,12 +19,26 @@ import urllib.request
 import urllib.error
 
 # ── Environment ──────────────────────────────────────────────────────────────
-GEMINI_API_KEY = os.environ["GEMINI_API_KEY"]
-GITHUB_TOKEN   = os.environ["GITHUB_TOKEN"]
-PR_NUMBER      = os.environ["PR_NUMBER"]
-REPO           = os.environ["REPO_FULL_NAME"]       # owner/repo
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
+GITHUB_TOKEN   = os.environ.get("GITHUB_TOKEN", "").strip()
+PR_NUMBER      = os.environ.get("PR_NUMBER", "")
+REPO           = os.environ.get("REPO_FULL_NAME", "")   # owner/repo
 BASE_SHA       = os.environ.get("BASE_SHA", "")
 HEAD_SHA       = os.environ.get("HEAD_SHA", "")
+
+# ── Early validation ─────────────────────────────────────────────────────────
+if not GEMINI_API_KEY:
+    print(
+        "ERROR: GEMINI_API_KEY is not set or empty.\n"
+        "  1. Get a key at https://aistudio.google.com/apikey\n"
+        "  2. Add it as a GitHub Secret: Settings → Secrets → Actions → GEMINI_API_KEY",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+if not GITHUB_TOKEN:
+    print("ERROR: GITHUB_TOKEN is not available.", file=sys.stderr)
+    sys.exit(1)
 
 GEMINI_MODEL   = "gemini-2.5-flash"
 MAX_DIFF_CHARS = 60_000   # Truncate very large diffs to stay within token limits
