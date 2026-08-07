@@ -23,12 +23,34 @@ def generate_options_files(spec_data, output_dir, package_prefix, verbose=False)
     if verbose:
         print("--- Starting Nanopb Options Extraction ---")
 
+    config = spec_data.get('config', {})
+    default_str_max = config.get('default_string_max_size', 64)
+    default_bytes_max = config.get('default_bytes_max_size', 64)
+    default_array_max = config.get('default_array_max_count', 16)
+
     options_by_file = collections.defaultdict(list)
+    options_by_file['types'] = []
+    options_by_file['windrpc'] = []
+    for service_spec in spec_data.get('services', []):
+        options_by_file[service_spec['name']] = []
 
     def _collect_options(item, current_service_name, current_msg_name=None):
         """재귀적으로 'nanopb' 옵션을 수집하는 헬퍼 함수입니다."""
-        if 'nanopb' in item:
-            # 대상 이름 구성 (예: hlt.power.PowerInfo.voltage_mill)
+        item_nanopb = item.get('nanopb', {})
+
+        # string / bytes / repeated 필드에 대한 기본 max_size / max_count 자동 부여
+        f_type = item.get('type')
+        f_prop = item.get('property')
+
+        if f_type == 'string' and 'max_size' not in item_nanopb and 'max_length' not in item_nanopb:
+            item_nanopb['max_size'] = default_str_max
+        elif f_type == 'bytes' and 'max_size' not in item_nanopb and 'max_length' not in item_nanopb:
+            item_nanopb['max_size'] = default_bytes_max
+
+        if f_prop == 'repeated' and 'max_count' not in item_nanopb:
+            item_nanopb['max_count'] = default_array_max
+
+        if item_nanopb:
             name_parts = [f"{package_prefix}.windrpc"]
             if current_service_name == "types":
                 name_parts.extend([f"{current_service_name}"])
@@ -40,13 +62,12 @@ def generate_options_files(spec_data, output_dir, package_prefix, verbose=False)
             name_parts.append(item['name'])
             target_name = ".".join(name_parts)
 
-            for key, value in item['nanopb'].items():
+            for key, value in item_nanopb.items():
                 if key == '__line__':
                     continue
                 formatted_value = _format_nanopb_option_value(value)
                 line = f"{target_name} {key}: {formatted_value}"
 
-                # 'types' 서비스의 옵션은 types.options 파일에 저장하고, 나머지는 각 서비스 파일에 저장합니다.
                 file_key = 'types' if current_service_name == 'types' else current_service_name
                 options_by_file[file_key].append(line)
 
@@ -68,65 +89,23 @@ def generate_options_files(spec_data, output_dir, package_prefix, verbose=False)
                 for field in oneof.get('fields', []):
                     _collect_options(field, svc_name, msg_def['name'])
 
-        # 각 서비스의 Request, Response, Notification 메시지에 콜백 옵션 자동 추가
-        # oneof 필드를 포함하는 메시지는 Nanopb에서 콜백 처리가 필요합니다.
-        if service_spec.get('rpcs'):
-            full_service_package = f"{package_prefix}.windrpc.service.{svc_name}"
-            # v2 구조에서는 Request, Response, Notification 메시지가 항상 생성될 수 있으므로
-            # 해당 메시지에 대한 콜백 옵션을 기본으로 추가해주는 것이 안전합니다.
-            rpcs = service_spec.get('rpcs') or []
-            request_exist = False
-            response_exist = False
-            notification_exist = False
-
-            for op in rpcs:
-                type = op.get('type', '').upper()
-                if type == 'NOTIFICATION':
-                    request_exist = True
-                    response_exist = True
-                    notification_exist = True
-                    break
-                elif type == 'REQUEST_RESPONSE':
-                    request_exist = True
-                    response_exist = True
-                elif type == 'REQUEST_ONLY':
-                    request_exist = True
-
-            if request_exist:
-                options_by_file[svc_name].append(
-                    f"{full_service_package}.Request submsg_callback: true")
-            if response_exist:
-                options_by_file[svc_name].append(
-                    f"{full_service_package}.Response submsg_callback: true")
-            if notification_exist:
-                options_by_file[svc_name].append(
-                    f"{full_service_package}.Notification submsg_callback: true")
-
-    # --- [추가] 3. windrpc.proto 옵션 추가 ---
-    windrpc_package = f"{package_prefix}.windrpc.core"
-    windrpc_messages = ["ClientMessage", "ServerMessage",
-                        "Request", "Response", "Notification"]
-    for msg_name in windrpc_messages:
-        options_by_file['windrpc'].append(
-            f"{windrpc_package}.{msg_name} submsg_callback: true")
-        if msg_name in ["Request", "Response"]:
-            options_by_file['windrpc'].append(
-                f"{windrpc_package}.{msg_name}.request_id max_length: 37")
+    # --- 3. windrpc.proto 옵션 추가 ---
 
     # --- 4. 파일 쓰기 ---
     for file_key, options_list in options_by_file.items():
-        # 파일 이름 결정 로직 수정
+        # 파일 이름 결정 로직: output_path(package/windrpc) 기준으로 .options 파일 배치
         if file_key == 'types':
-            options_file_name = 'types/types.options'
+            options_file_name = os.path.join('types', 'types.options')
         elif file_key == 'windrpc':
-            options_file_name = 'core/windrpc.options'
+            options_file_name = os.path.join('core', 'windrpc.options')
         else:  # 서비스 파일인 경우
-            options_file_name = f"service/{file_key}.options"
+            options_file_name = os.path.join('service', f"{file_key}.options")
 
         options_file_path = os.path.join(output_dir, options_file_name)
+        os.makedirs(os.path.dirname(options_file_path), exist_ok=True)
 
         with open(options_file_path, 'w', encoding='utf-8') as f:
-            f.write(f"# Nanopb options for {file_key}\n")
+            f.write(f"# Copyright (c) 2026 WindRPC\n#\n# SPDX-License-Identifier: MIT\n#\n# Nanopb options for {file_key}\n")
             for line in sorted(list(set(options_list))):  # 중복 제거 및 정렬
                 f.write(line + "\n")
 

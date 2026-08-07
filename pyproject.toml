@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "windrpc"
+version = "0.1.0"
+description = "Micro Interconnect & Network Dispatch RPC framework using Protocol Buffers and NanoPB"
+readme = "README.md"
+authors = [
+    { name = "rollcake", email = "rollcake.dev@gmail.com" }
+]
+license = { text = "MIT" }
+keywords = ["RPC", "protocol buffer", "nanopb", "windrpc", "microcontroller", "embedded"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: System :: Networking",
+    "Topic :: Software Development :: Code Generators"
+]
+requires-python = ">=3.8"
+dependencies = [
+    "pyyaml>=6.0",
+    "jinja2>=3.0"
+]
+
+[project.urls]
+Homepage = "https://github.com/micro-artwork/windrpc"
+Repository = "https://github.com/micro-artwork/windrpc.git"
+
+[project.scripts]
+windrpc = "windrpc.windrpc_gen:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+
+[tool.setuptools.package-data]
+windrpc = ["*.yml", "*.yaml", "*.c", "*.h", "*.proto", "*.options", "server/templates/*"]

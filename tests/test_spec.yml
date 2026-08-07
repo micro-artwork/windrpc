@@ -1,0 +1,42 @@
+package: pkg_2trelo
+services:
+- id: 11
+  name: led
+  messages:
+  - name: PixelData
+    fields:
+    - number: 1
+      name: colors
+      type: fixed32
+      property: repeated
+      nanopb:
+        max_count: 100
+  rpcs:
+  - id: 1
+    name: display_pixels
+    type: REQUEST_ONLY
+    command: PixelData
+- id: 12
+  name: power
+  messages:
+  - name: PowerInfo
+    fields:
+    - number: 1
+      name: voltage_mill
+      type: uint32
+    - number: 2
+      name: ampere_mill
+      type: uint32
+    - number: 3
+      name: watt_mill
+      type: uint32
+  rpcs:
+  - id: 1
+    name: read_power_info
+    type: REQUEST_RESPONSE
+    command: types.Empty
+    result: PowerInfo
+  - id: 2
+    name: power_notification
+    type: NOTIFICATION
+    event: PowerInfo

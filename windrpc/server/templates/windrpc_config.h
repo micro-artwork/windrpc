@@ -3,8 +3,37 @@
 
 #include "windrpc_common.h"
 
-#define WINDRPC_REQUEST_ID_TYPE WINDRPC_REQUEST_ID_TYPE_NONE
-
 #define WINDRPC_LOG_LEVEL LOG_LEVEL_INF
+
+// 0: Double Buffer (safe), 1: In-place Buffer (saves RAM)
+#ifndef WINDRPC_USE_INPLACE_BUFFER
+#define WINDRPC_USE_INPLACE_BUFFER 0
+#endif
+
+// --WINDRPC_STACK_AND_BUFFER_DEFINES
+
+#ifndef WINDRPC_SPEC_VERSION_CODE
+#define WINDRPC_SPEC_VERSION_CODE 10000
+#endif
+
+#ifndef WINDRPC_SPEC_VERSION_NAME
+#define WINDRPC_SPEC_VERSION_NAME "1.0.0"
+#endif
+
+#ifndef WINDRPC_MANUFACTURER_NAME
+#define WINDRPC_MANUFACTURER_NAME "unknown"
+#endif
+
+#ifndef WINDRPC_MODEL_NUMBER
+#define WINDRPC_MODEL_NUMBER "unknown"
+#endif
+
+#ifndef WINDRPC_HW_REVISION
+#define WINDRPC_HW_REVISION "unknown"
+#endif
+
+#ifndef WINDRPC_FW_REVISION
+#define WINDRPC_FW_REVISION "unknown"
+#endif
 
 #endif

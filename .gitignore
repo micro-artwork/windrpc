@@ -1,5 +1,3 @@
-
-
 # Prerequisites
 *.d
 
@@ -56,10 +54,20 @@ dkms.conf
 # debug information files
 *.dwo
 .DS_Store
+# Build & Generated outputs
+build/
+generated/
+generated_*/
+
 /build
 /dist
 /windrpc.egg-info
 *.pyc
-/examples/self_enc_dec/build
-/examples/self_enc_dec/protos
-/examples/self_enc_dec/server
+
+__pycache__
+/windrpc/protos
+/tests/build*
+/tests/generated*
+.vscode
+node_modules
+tests/csharp_test/obj

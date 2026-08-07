@@ -1,4 +1,7 @@
-platform_version_code: 1
+info:
+  version_code: 100
+  version_name: "0.1.0"
+
 
 types:
   enums:
@@ -32,7 +35,7 @@ types:
       description: 'No message(parameters/return value, void like in C/C++)'
       fields: []
     - name: Subscribe
-      description: '비동기 알림을 구독/해지할 때 사용되는 메시지'
+      description: 'Message used for subscribing or unsubscribing async notifications'
       fields:
         - number: 1
           name: enable
@@ -45,7 +48,7 @@ types:
           description: 'user command or data'
           nanopb: { max_length: 32 }
     - name: Status
-      description: '에러 응답을 위해 사용되는 메시지'
+      description: 'System error status response message'
       fields:
         - number: 1
           name: code
@@ -54,10 +57,12 @@ types:
           name: message
           type: string
           property: optional
+          nanopb: { max_length: 64 }
         - number: 3
           name: details
           type: bytes
           property: optional
+          nanopb: { max_length: 64 }
 
 ## ---------------------------------------------------------------------------
 ## Core Services
@@ -65,9 +70,30 @@ types:
 services:
   - id: 6
     name: common
+    messages:
+      - name: PingResponse
+        description: 'Ping handshake response message containing framework & spec version information'
+        fields:
+          - { number: 1, name: core_version_code, type: uint32 }
+          - { number: 2, name: core_version_name, type: string, nanopb: { max_length: 32 } }
+          - { number: 3, name: spec_version_code, type: uint32 }
+          - { number: 4, name: spec_version_name, type: string, nanopb: { max_length: 32 } }
+      - name: DeviceInfo
+        description: 'Device Information Service (DIS) metadata message'
+        fields:
+          - { number: 1, name: manufacturer_name, type: string, nanopb: { max_length: 64 } }
+          - { number: 2, name: model_number,       type: string, nanopb: { max_length: 64 } }
+          - { number: 3, name: serial_number,      type: string, nanopb: { max_length: 64 } }
+          - { number: 4, name: hw_revision,        type: string, nanopb: { max_length: 32 } }
+          - { number: 5, name: fw_revision,        type: string, nanopb: { max_length: 32 } }
     rpcs:
       - id: 1
         name: ping
         type: REQUEST_RESPONSE
         command: types.Empty
-        result: uint32
+        result: PingResponse
+      - id: 2
+        name: get_device_info
+        type: REQUEST_RESPONSE
+        command: types.Empty
+        result: DeviceInfo

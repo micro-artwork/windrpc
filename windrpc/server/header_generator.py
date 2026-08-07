@@ -50,7 +50,7 @@ def generate_common_header_content(spec_data, package_name, verbose=False):
                 # 조건에 해당하지 않는 라인은 그대로 추가
                 content.append(line)
     except FileNotFoundError:
-        print(f"오류: '{file_path}' 파일을 찾을 수 없습니다.")
+        print(f"Error: File '{file_path}' not found.", file=sys.stderr)
 
     return "".join(content)
 
@@ -66,45 +66,11 @@ def generate_config_header(output_dir):
 
 def generate_windrpc_header_content(spec_data, verbose=False):
     file_path = get_template_file_path('windrpc.h')
-
-    services = spec_data.get('services', [])
-    struct_svc_content = []
-    struct_windrpc_content = [
-        "struct windrpc_service {"
-    ]
-
-    for index, service in enumerate(services):
-        if index != 0:
-            struct_svc_content.append("};\n")
-        if 'name' in service:
-            name = service['name']
-            struct_declare = f"struct windrpc_service_{name}"
-            struct_svc_content.append(f"{struct_declare} {{")
-            if name != 'common':
-                struct_windrpc_content.append(f"    {struct_declare} *{name};")
-        for rpc in service.get('rpcs', []):
-            rpc_type = rpc.get('type', '').upper()
-            rpc_name = rpc['name']
-            if rpc_type == "NOTIFICATION":
-                struct_svc_content.append(
-                    f"    struct windrpc_procedure subscribe_{rpc_name};")
-            else:
-                struct_svc_content.append(
-                    f"    struct windrpc_procedure {rpc_name};")
-
-    struct_svc_content.append("};\n")
-    struct_windrpc_content.append("};\n")
-
     content = []
     try:
         lines = read_lines(file_path)
         for line in lines:
-            if '--WINDRPC_STRUCTURES_FOR_SERVICE' in line:
-                content.append(line)
-                content.extend("\n".join(struct_svc_content))
-                content.extend("\n".join(struct_windrpc_content))
-            else:
-                content.append(line)
+            content.append(line)
     except FileNotFoundError:
         print(f"error: '{file_path}' is not found")
 

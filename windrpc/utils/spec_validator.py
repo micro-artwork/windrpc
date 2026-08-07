@@ -1,16 +1,19 @@
 # utils/spec_validator.py
-from utils.converter import to_pascal_case
 import sys
 import os
 
-# 경로 설정을 통해 converter 모듈을 임포트
+# Configure import path for converter module
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
-sys.path.append(parent_dir)
+if parent_dir not in sys.path:
+    sys.path.append(parent_dir)
+
+from utils.converter import to_pascal_case, enum_value_prefix, apply_enum_prefix
+import re
 
 
 class ValidationError:
-    """메시지, 컨텍스트, 줄 번호를 포함하는 유효성 검증 에러를 나타냅니다."""
+    """Represents a validation error with message, context, and line number."""
 
     def __init__(self, message, context, line=None):
         self.message = message
@@ -28,23 +31,79 @@ class ValidationError:
         return str(self) < str(other)
 
 
-def validate(spec_data, verbose=False):
-    """전체 스펙에 대해 ID 고유성 및 기타 규칙을 검증합니다."""
+def validate(spec_data, verbose=False, strict=False):
+    """Validates ID uniqueness and rule compliance across the specification.
+
+    Args:
+        strict: If True, treat missing enum value prefixes as errors.
+                If False (default), log warnings and auto-fix during code generation.
+    """
     errors = []
+    warnings = []
     if verbose:
         print("--- Starting YAML Specification Validation ---")
 
-    # --- 1. 사전 계산 ---
+    # --- 1. Pre-computation ---
+    IDENTIFIER_PATTERN = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+    SNAKE_CASE_PATTERN = re.compile(r'^[a-z0-9_]+$')
+    PASCAL_CASE_PATTERN = re.compile(r'^[A-Z][a-zA-Z0-9]*$')
+    UPPER_SNAKE_CASE_PATTERN = re.compile(r'^[A-Z0-9_]+$')
+    SERVICE_NAME_PATTERN = re.compile(r'^[a-z][a-z0-9_]*$')
+
+    def validate_name(name, expected_type, context, line):
+        if not name or not isinstance(name, str):
+            errors.append(ValidationError("Name must be a non-empty string.", context, line))
+            return False
+
+        if not IDENTIFIER_PATTERN.match(name):
+            errors.append(ValidationError(
+                f"Name '{name}' contains invalid characters. Must start with a letter/underscore and contain only letters, numbers, and underscores.",
+                context, line
+            ))
+            return False
+
+        if expected_type == 'service':
+            if not SERVICE_NAME_PATTERN.match(name):
+                errors.append(ValidationError(
+                    f"Service name '{name}' violates styling rules. Must be in snake_case (lowercase, numbers, and underscores, starting with a letter).",
+                    context, line
+                ))
+                return False
+        elif expected_type in ('message', 'enum'):
+            if not PASCAL_CASE_PATTERN.match(name):
+                errors.append(ValidationError(
+                    f"{expected_type.capitalize()} name '{name}' violates styling rules. Must be in PascalCase (alphanumeric, starting with a capital letter, no underscores).",
+                    context, line
+                ))
+                return False
+        elif expected_type in ('field', 'rpc'):
+            if not SNAKE_CASE_PATTERN.match(name):
+                errors.append(ValidationError(
+                    f"Name '{name}' violates styling rules. Must be in snake_case.",
+                    context, line
+                ))
+                return False
+        elif expected_type == 'enum_member':
+            if not UPPER_SNAKE_CASE_PATTERN.match(name):
+                errors.append(ValidationError(
+                    f"Enum member name '{name}' violates styling rules. Must be in UPPER_SNAKE_CASE (uppercase letters, numbers, and underscores).",
+                    context, line
+                ))
+                return False
+        return True
+
     PROTO_SCALAR_TYPES = {'double', 'float', 'int32', 'int64', 'uint32', 'uint64', 'sint32',
                           'sint64', 'fixed32', 'fixed64', 'sfixed32', 'sfixed64', 'bool', 'string', 'bytes'}
     package_name = spec_data.get('package')
+    if package_name:
+        validate_name(package_name, 'service', 'package name', None)
     types_spec = spec_data.get('types', {})
     services = spec_data.get('services') or []
     VALID_RPC_TYPES = {'REQUEST_ONLY', 'REQUEST_RESPONSE', 'NOTIFICATION'}
 
-    # 헬퍼 함수 정의 (to_pascal_case)
+    # Helper function definition (to_pascal_case)
     def to_pascal_case(name):
-        """스네이크 케이스나 카멜 케이스를 파스칼 케이스로 변환합니다."""
+        """Converts snake_case or camelCase to PascalCase."""
         if not name or not isinstance(name, str):
             return name
         if '_' in name:
@@ -52,7 +111,7 @@ def validate(spec_data, verbose=False):
         else:
             return name[0].upper() + name[1:]
 
-    # 교차 파일 검증을 위한 이름 목록 사전 계산
+    # Pre-compute name sets for cross-file validation
     normalized_service_names = {to_pascal_case(
         svc.get('name')) for svc in services if svc.get('name')}
 
@@ -68,8 +127,8 @@ def validate(spec_data, verbose=False):
         } for svc in services
     }
 
-    # --- 2. 헬퍼 함수 ---
-    # --- 2. [수정됨] 유효성 검증 헬퍼 함수 ---
+    # --- 2. Helper Functions ---
+    # --- 2. [Modified] Validation Helper Functions ---
     def is_valid_type(type_name, current_service_name=None):
         if not type_name or not isinstance(type_name, str):
             return False
@@ -118,7 +177,7 @@ def validate(spec_data, verbose=False):
             seen_values.add(value)
 
     def check_normalized_name_uniqueness(items, key, context_name, normalizer):
-        """정규화된 이름의 고유성을 확인합니다. (범위 내에서)"""
+        """Validates uniqueness of normalized names (within scope)."""
         seen_normalized_names = {}  # {normalized_name: first_item}
         if not items:
             return
@@ -148,38 +207,59 @@ def validate(spec_data, verbose=False):
         check_uniqueness(all_fields, 'name', context_name)
 
         for field in all_fields:
+            field_name = field.get('name')
+            validate_name(field_name, 'field', f"{context_name} -> field '{field_name}'", field.get('__line__'))
             if not is_valid_type(field.get('type'), current_service_name):
                 errors.append(ValidationError(
                     f"Invalid type '{field.get('type')}' for field '{field.get('name')}'.", context_name, field.get('__line__')))
 
-    # 수정된 enum 검증 헬퍼 함수
+    # Enum validation helper function
     def validate_enums(enum_defs, context_base_name):
         for enum_def in enum_defs:
             enum_name = enum_def.get('name', 'N/A')
             enum_context = f"{context_base_name} -> enum '{enum_name}'"
             enum_members = enum_def.get('members') or []
 
-            # 'name' 고유성 검사는 그대로 유지 (enum 멤버 이름은 고유해야 함)
+            # Maintain 'name' uniqueness check (enum member names must be unique)
             check_uniqueness(enum_members, 'name',
                              f"{enum_context} -> members")
+
+            # Proto style guide: check enum value prefixes
+            # Derive prefix automatically from 'prefix' key or enum type name
+            explicit_prefix = enum_def.get('prefix', None)
+            expected_prefix = enum_value_prefix(enum_name, explicit_prefix)
+            members_missing_prefix = [
+                m.get('name') for m in enum_members
+                if m.get('name') and not m['name'].upper().startswith(expected_prefix.upper())
+            ]
+            if members_missing_prefix:
+                msg = (
+                    f"Enum '{enum_name}' members {members_missing_prefix} are missing "
+                    f"the required proto-style prefix '{expected_prefix}'. "
+                    f"(auto-fix will apply prefix during generation)"
+                )
+                if strict:
+                    errors.append(ValidationError(msg, enum_context, enum_def.get('__line__')))
+                else:
+                    warnings.append(f"[WARN] {enum_context}: {msg}")
 
             seen_explicit_values = set()
             has_zero = False
             first_member_has_value_0 = False
 
-            # YAML 로더가 줄 번호를 주입하는 방식이므로, members 리스트에서 첫 번째 멤버를 안전하게 확인
+            # Safely check first member in members list (line numbers injected by YAML loader)
             first_member = enum_members[0] if enum_members else None
 
-            # 0 값 존재 여부 검사
-            # Case 1: 첫 번째 멤버의 value가 0으로 명시된 경우
+            # Check presence of value 0
+            # Case 1: First member explicitly specifies value 0
             if first_member and first_member.get('value') == 0:
                 has_zero = True
                 first_member_has_value_0 = True
-            # Case 2: 첫 번째 멤버에 value가 없어서 자동으로 0이 할당될 경우
+            # Case 2: First member lacks value and automatically receives 0
             elif first_member and 'value' not in first_member:
                 has_zero = True
                 first_member_has_value_0 = True
-            # Case 3: 다른 멤버에 0이 명시적으로 존재하는 경우
+            # Case 3: Other members explicitly specify 0
             else:
                 for member in enum_members:
                     if member.get('value') == 0:
@@ -190,18 +270,20 @@ def validate(spec_data, verbose=False):
                 errors.append(ValidationError(
                     "Enum must contain a member with value 0. Protocol Buffer 3 requires the first enum value to be 0 or to be implicitly assigned 0.", enum_context, enum_def.get('__line__')))
 
-            # 중복 값 검사 (명시적으로 지정된 값만 검사)
+            # Check for duplicate values (only check explicitly specified values)
             for i, member in enumerate(enum_members):
                 member_name = member.get('name', 'N/A')
                 line = member.get('__line__')
 
-                # 'value'가 명시적으로 정의된 경우에만 중복을 검사
+                # Check member naming style (after auto-applying prefix)
+                effective_name = apply_enum_prefix(member_name, expected_prefix)
+                validate_name(effective_name, 'enum_member', f"{enum_context} -> member '{member_name}'", line)
+
+                # Check duplicate value only if 'value' is explicitly defined
                 if 'value' in member:
                     member_value = member.get('value')
 
-                    # Protocol Buffer 3에서 첫 번째 enum 값은 0이어야 함 (명시적 또는 암묵적)
-                    # 만약 첫 번째 멤버가 아닌데 value=0을 명시하면 중복으로 간주
-                    # 또는 첫 번째 멤버라도 value=0이 아닌 값을 명시하면 오류
+                    # In Protocol Buffers 3, first enum value must be 0 (explicit or implicit)
                     if i == 0 and member_value != 0:
                         errors.append(ValidationError(
                             f"The first enum member '{member_name}' must have a value of 0. Received: {member_value}", enum_context, line))
@@ -211,18 +293,12 @@ def validate(spec_data, verbose=False):
                             f"Duplicate explicit value '{member_value}' for enum member '{member_name}'.", enum_context, line))
                     seen_explicit_values.add(member_value)
                 else:
-                    # 'value'가 없는 멤버에 대해, 이전 멤버에 'value'가 없었다면 0이 할당될 것이므로
-                    # 이전에 'value'가 없는 첫 번째 멤버가 이미 0을 가졌는지 확인
-                    if i == 0 and not has_zero:  # 이 조건은 위에서 처리되므로 사실상 필요 없음.
-                        # 하지만 혹시 모르니 남겨둠.
+                    if i == 0 and not has_zero:
                         errors.append(ValidationError(
                             f"The first enum member '{member_name}' must implicitly or explicitly have a value of 0.", enum_context, line))
-
-                    # 'value'가 명시되지 않은 경우, generate_protos.py가 순차적으로 값을 할당할 것이므로
-                    # 이 단계에서 충돌을 미리 감지할 필요는 없음. (generate_protos.py가 유효한 값을 부여할 것임)
                     pass
 
-    # --- 3. 메인 검증 로직 ---
+    # --- 3. Main Validation Logic ---
 
     if verbose:
         print("Validating cross-file package and name safety...")
@@ -269,10 +345,16 @@ def validate(spec_data, verbose=False):
         types_enums, 'name', "types.enums", to_pascal_case)
 
     for msg_def in types_messages:
+        msg_name = msg_def.get('name')
+        validate_name(msg_name, 'message', f"types.message '{msg_name}'", msg_def.get('__line__'))
         validate_fields(
             msg_def, f"types.message '{msg_def.get('name')}'", None)
 
-    # Enum 검증 로직 추가
+    for enum_def in types_enums:
+        enum_name = enum_def.get('name')
+        validate_name(enum_name, 'enum', f"types.enum '{enum_name}'", enum_def.get('__line__'))
+
+    # Validate enums in types section
     validate_enums(types_enums, "types")
 
     if not services:
@@ -284,6 +366,21 @@ def validate(spec_data, verbose=False):
     for svc in services:
         svc_name = svc.get('name', 'N/A')
         svc_context = f"service '{svc_name}'"
+        validate_name(svc_name, 'service', svc_context, svc.get('__line__'))
+        
+        # Validate service ID range and constraints
+        svc_id = svc.get('id')
+        if svc_id is not None:
+            if not isinstance(svc_id, int):
+                errors.append(ValidationError(
+                    f"Service ID must be an integer. Received: '{svc_id}'", svc_context, svc.get('__line__')))
+            elif svc_id < 1 or svc_id > 255:
+                errors.append(ValidationError(
+                    f"Service ID must be in range [1, 255]. Received: {svc_id}", svc_context, svc.get('__line__')))
+            elif 1 <= svc_id <= 6 and svc_name != 'common':
+                errors.append(ValidationError(
+                    f"Service ID {svc_id} is in reserved range [1, 6] for windrpc core services.", svc_context, svc.get('__line__')))
+
         if verbose:
             print(f"Validating {svc_context} for internal uniqueness...")
 
@@ -300,17 +397,36 @@ def validate(spec_data, verbose=False):
             service_enums, 'name', f"{svc_context} -> enums", to_pascal_case)
 
         for msg_def in service_messages:
+            msg_name = msg_def.get('name')
+            validate_name(msg_name, 'message', f"{svc_context} -> message '{msg_name}'", msg_def.get('__line__'))
             validate_fields(
                 msg_def, f"{svc_context} -> message '{msg_def.get('name')}'", svc_name)
 
-        # 서비스 내 enum 검증 로직 추가
+        for enum_def in service_enums:
+            enum_name = enum_def.get('name')
+            validate_name(enum_name, 'enum', f"{svc_context} -> enum '{enum_name}'", enum_def.get('__line__'))
+
+        # Validate enums within service
         validate_enums(service_enums, svc_context)
 
         check_uniqueness(rpcs, 'id', f"{svc_context} -> rpcs")
         check_uniqueness(rpcs, 'name', f"{svc_context} -> rpcs")
 
         for op in rpcs:
-            op_context = f"{svc_context} -> rpc '{op.get('name')}'"
+            op_name = op.get('name')
+            op_context = f"{svc_context} -> rpc '{op_name}'"
+            validate_name(op_name, 'rpc', op_context, op.get('__line__'))
+            
+            # Validate RPC ID range and constraints
+            op_id = op.get('id')
+            if op_id is not None:
+                if not isinstance(op_id, int):
+                    errors.append(ValidationError(
+                        f"RPC ID must be an integer. Received: '{op_id}'", op_context, op.get('__line__')))
+                elif op_id < 1 or op_id > 255:
+                    errors.append(ValidationError(
+                        f"RPC ID must be in range [1, 255]. Received: {op_id}", op_context, op.get('__line__')))
+
             type = op.get('type', '').upper()
             line = op.get('__line__')
 
@@ -319,27 +435,30 @@ def validate(spec_data, verbose=False):
                     f"Invalid 'type' value '{op.get('type')}'. Must be one of {VALID_RPC_TYPES}.", op_context, line))
                 continue
 
+            req_type = op.get('request') or op.get('command') or op.get('params') or op.get('parameter') or op.get('input')
+            res_type = op.get('response') or op.get('result') or op.get('returns') or op.get('return') or op.get('output')
+
             if type == 'REQUEST_ONLY':
-                if 'command' not in op:
+                if not req_type:
                     errors.append(ValidationError(
-                        "'command' key is required for REQUEST_ONLY.", op_context, line))
-                elif not is_valid_type(op['command'], svc_name):
+                        "'request' (or 'command') key is required for REQUEST_ONLY.", op_context, line))
+                elif not is_valid_type(req_type, svc_name):
                     errors.append(ValidationError(
-                        f"Invalid type for 'command': {op['command']}", op_context, line))
+                        f"Invalid type for 'request': {req_type}", op_context, line))
 
             elif type == 'REQUEST_RESPONSE':
-                if 'command' not in op:
+                if not req_type:
                     errors.append(ValidationError(
-                        "'command' key is required for REQUEST_RESPONSE.", op_context, line))
-                elif not is_valid_type(op['command'], svc_name):
+                        "'request' (or 'command') key is required for REQUEST_RESPONSE.", op_context, line))
+                elif not is_valid_type(req_type, svc_name):
                     errors.append(ValidationError(
-                        f"Invalid type for 'command': {op['command']}", op_context, line))
-                if 'result' not in op:
+                        f"Invalid type for 'request': {req_type}", op_context, line))
+                if not res_type:
                     errors.append(ValidationError(
-                        "'result' key is required for REQUEST_RESPONSE.", op_context, line))
-                elif not is_valid_type(op['result'], svc_name):
+                        "'response' (or 'result') key is required for REQUEST_RESPONSE.", op_context, line))
+                elif not is_valid_type(res_type, svc_name):
                     errors.append(ValidationError(
-                        f"Invalid type for 'result': {op['result']}", op_context, line))
+                        f"Invalid type for 'response': {res_type}", op_context, line))
 
             elif type == 'NOTIFICATION':
                 if 'event' not in op:
@@ -349,7 +468,11 @@ def validate(spec_data, verbose=False):
                     errors.append(ValidationError(
                         f"Invalid type for 'event': {op['event']}", op_context, line))
 
-    # --- 4. 에러 보고 ---
+
+    # --- 4. Error / Warning Reporting ---
+    if warnings:
+        for w in warnings:
+            print(w)
     if errors:
         print("\nYAML Specification Validation Failed:")
         for error in sorted(errors):
