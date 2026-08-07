@@ -1,0 +1,46 @@
+package: device_demo
+
+info:
+  title: "UDP End-to-End Demo Specification"
+  version: "1.0.0"
+
+services:
+  # Service 8: Power Manager (Get status & receive charging alert notifications)
+  - id: 8
+    name: power_manager
+    messages:
+      - name: PowerStatus
+        fields:
+          - { number: 1, name: voltage_mv, type: uint32 }
+          - { number: 2, name: current_ma, type: uint32 }
+          - { number: 3, name: is_charging, type: bool }
+    rpcs:
+      - id: 1
+        name: get_power_status
+        type: REQUEST_RESPONSE
+        command: types.Empty
+        result: PowerStatus
+
+      - id: 2
+        name: charging_alert
+        type: NOTIFICATION
+        event: PowerStatus
+
+  # Service 9: Device Control (Set LED Color)
+  - id: 9
+    name: device_control
+    messages:
+      - name: LedColor
+        fields:
+          - { number: 1, name: r, type: uint32 }
+          - { number: 2, name: g, type: uint32 }
+          - { number: 3, name: b, type: uint32 }
+      - name: LedResult
+        fields:
+          - { number: 1, name: success, type: bool }
+    rpcs:
+      - id: 1
+        name: set_led_color
+        type: REQUEST_RESPONSE
+        command: LedColor
+        result: LedResult

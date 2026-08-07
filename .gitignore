@@ -54,6 +54,11 @@ dkms.conf
 # debug information files
 *.dwo
 .DS_Store
+# Build & Generated outputs
+build/
+generated/
+generated_*/
+
 /build
 /dist
 /windrpc.egg-info
