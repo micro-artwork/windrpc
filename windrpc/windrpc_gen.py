@@ -3,9 +3,9 @@
 import argparse
 import sys
 import os
-from proto import generator as proto_generator
-from server import generator as server_generator
-from client import generator as client_generator
+from windrpc.proto import generator as proto_generator
+from windrpc.server import generator as server_generator
+from windrpc.client import generator as client_generator
 
 
 def _resolve_paths(args):

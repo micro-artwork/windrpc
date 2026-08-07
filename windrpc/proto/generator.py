@@ -1,8 +1,8 @@
 # proto/generator.py
-from utils.spec import merge_specs, combine_ids
-from utils.converter import to_pascal_case, enum_value_prefix, apply_enum_prefix
-from utils.loader import LineNumberLoader
-from utils import spec_validator
+from windrpc.utils.spec import merge_specs, combine_ids
+from windrpc.utils.converter import to_pascal_case, enum_value_prefix, apply_enum_prefix
+from windrpc.utils.loader import LineNumberLoader
+from windrpc.utils import spec_validator
 from . import options_generator
 import yaml
 import os

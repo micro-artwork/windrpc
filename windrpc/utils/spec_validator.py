@@ -2,13 +2,7 @@
 import sys
 import os
 
-# Configure import path for converter module
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-if parent_dir not in sys.path:
-    sys.path.append(parent_dir)
-
-from utils.converter import to_pascal_case, enum_value_prefix, apply_enum_prefix
+from windrpc.utils.converter import to_pascal_case, enum_value_prefix, apply_enum_prefix
 import re
 
 

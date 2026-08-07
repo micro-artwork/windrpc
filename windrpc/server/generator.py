@@ -2,11 +2,11 @@
 import yaml
 import os
 import sys
-from utils import spec_validator
-from utils.loader import LineNumberLoader
-from utils.converter import to_pascal_case
-from utils.spec import merge_specs
-from utils.file import copy, read_lines, write
+from windrpc.utils import spec_validator
+from windrpc.utils.loader import LineNumberLoader
+from windrpc.utils.converter import to_pascal_case
+from windrpc.utils.spec import merge_specs
+from windrpc.utils.file import copy, read_lines, write
 
 
 def _get_template_file_path(file_name):

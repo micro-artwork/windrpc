@@ -4,11 +4,11 @@ import sys
 import yaml
 import glob
 
-from utils.loader import LineNumberLoader
-from utils.spec import merge_specs
-from utils import spec_validator
-from utils.protoc_resolver import ProtocResolver
-from proto import generator as proto_generator
+from windrpc.utils.loader import LineNumberLoader
+from windrpc.utils.spec import merge_specs
+from windrpc.utils import spec_validator
+from windrpc.utils.protoc_resolver import ProtocResolver
+from windrpc.proto import generator as proto_generator
 from .csharp import generate_csharp_client
 from .js import generate_js_client, generate_cobs_js
 from .python import generate_python_client

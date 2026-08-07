@@ -1,5 +1,5 @@
 import os
-from utils.file import read_lines, copy
+from windrpc.utils.file import read_lines, copy
 
 
 def get_template_file_path(file_name):
