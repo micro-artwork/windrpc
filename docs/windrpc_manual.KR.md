@@ -177,6 +177,9 @@ $$\text{combined\_id} = (\text{service\_id} \ll 8) \mid \text{rpc\_id}$$
 - Service ID 1~6: WindRPC 코어 예약 구간 (`common` 등)
 - Service ID 7~255: 사용자 정의 비즈니스 서비스 구간
 - RPC ID 1~255: 서비스 내부 개별 메서드 ID
+- 예약된 Combined RPC ID:
+  - `0x0000`: 시스템 오류 응답 (전체 서비스 공통 예약)
+  - `0x0601`: 코어 Ping / 버전 핸드셰이크 (항상 내장 제공)
 
 ### 3.3 전송 레이어 선택 (COBS 프레이밍 및 CRC)
 

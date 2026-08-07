@@ -79,6 +79,9 @@ The specification validator (`spec_validator.py`) enforces the following naming 
 ### 2.3 Service IDs & RPC Types
 
 - **Service ID Reservations**: **Service IDs 1 through 6 are reserved** for WindRPC core framework functions. User-defined services must use integer IDs between **7 and 255**.
+- **Reserved Combined RPC IDs**:
+  - `0x0000` — System Error response (reserved across all services)
+  - `0x0601` — Core Ping / Version Handshake (built-in, always available)
 - **RPC Types (`type`)**:
   1. `REQUEST_ONLY`: Fire-and-forget request with no server response. Requires `request`.
   2. `REQUEST_RESPONSE`: Standard bi-directional RPC. Requires `request` and `response`.

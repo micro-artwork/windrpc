@@ -187,6 +187,7 @@ package: my_project
 
 services:
   # Service IDs 1 to 6 are reserved for WindRPC core services
+  # Reserved combined RPC IDs: 0x0000 (System Error), 0x0601 (Core Ping/Version Handshake)
   - id: 7
     name: led_control
     messages:
