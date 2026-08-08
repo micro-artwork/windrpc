@@ -19,6 +19,7 @@ This document serves as the single unified reference manual for WindRPC, coverin
    - [3.3 Transport Choices (COBS Framing & CRC Verification)](#33-transport-choices-cobs-framing--crc-verification)
    - [3.4 Buffer Isolation Modes (Double Buffering vs In-place)](#34-buffer-isolation-modes-double-buffering-vs-in-place)
    - [3.5 Core Version Handshake (`PingResponse`)](#35-core-version-handshake-pingresponse)
+   - [3.6 Multi-Client & Multi-Channel Considerations](#36-multi-client--multi-channel-considerations)
 4. [C Server Engine Integration](#4-c-server-engine-integration)
    - [4.1 Server Handler Callbacks](#41-server-handler-callbacks)
    - [4.2 Event Loop Binding](#42-event-loop-binding)
@@ -204,6 +205,16 @@ message PingResponse {
     string spec_version_name = 4;  // Spec firmware version string (e.g. "1.0.0")
 }
 ```
+
+### 3.6 Multi-Client & Multi-Channel Considerations
+
+The WindRPC C server engine is a stateless, zero-heap framework primarily designed for 1:1 communication (single server to single client) in resource-constrained microcontroller (MCU) environments.
+
+If you need to support multiple concurrent clients or multiple physical channels (e.g. concurrent UART + BLE, multiple UDP clients), developers must construct the following higher-layer routing mechanisms within their application layer:
+
+1. **Message Queue-Based Sequential Processing**: Incoming packets from multiple channels should be queued into an RTOS message queue (e.g., FreeRTOS Queue, Zephyr `k_msgq`) or ring buffer, and processed sequentially by a single worker thread invoking `windrpc_handle(&txn)`.
+2. **Client Routing & Outer Framing Layer**: Because the 6-byte raw binary header does not contain a client ID field, developers must implement an outer transport framing wrapper or manage a channel mapping layer in application code to route matching response frames back to the correct client.
+3. **Double Buffer Mode Recommended**: Always configure `WINDRPC_USE_INPLACE_BUFFER 0` (Double Buffer Mode) to prevent RX/TX buffer corruption when handling concurrent channel streams.
 
 ---
 

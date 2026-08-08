@@ -14,6 +14,7 @@ This document provides instructions and guidelines for AI Coding Agents (Gemini 
    - Header format: `[RPC_ID (2B)][SEQ_ID (2B)][PAYLOAD_LEN (2B)]`
    - `RPC_ID` = `(service_id << 8) | rpc_id`
 3. **Transport Independence**: Supports COBS framing for serial byte streams (UART, USB-CDC) and raw datagram framing for packet channels (UDP, BLE, TCP).
+4. **Stateless 1:1 Architecture**: The C MCU engine is stateless and optimized for 1:1 server-client communication. Supporting multi-client or multi-channel setups requires building an application-level RTOS message queue and routing layer.
 
 ---
 

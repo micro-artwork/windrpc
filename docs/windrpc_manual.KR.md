@@ -19,6 +19,7 @@
    - [3.3 전송 레이어 선택 (COBS 프레이밍 및 CRC)](#33-전송-레이어-선택-cobs-프레이밍-및-crc)
    - [3.4 수신/송출 버퍼 분리 옵션 (Double Buffering vs In-place)](#34-수신송출-버퍼-분리-옵션-double-buffering-vs-in-place)
    - [3.5 코어 버저닝 핸드셰이크 (`PingResponse`)](#35-코어-버저닝-핸드셰이크-pingresponse)
+   - [3.6 멀티 클라이언트 및 멀티 채널 응용 안내](#36-멀티-클라이언트-및-멀티-채널-응용-안내-multi-client--multi-channel-considerations)
 4. [C 서버 엔진 연동](#4-c-서버-엔진-연동)
    - [4.1 서버 콜백 구현](#41-서버-콜백-구현)
    - [4.2 서버 이벤트 루프 바인딩](#42-서버-이벤트-루프-바인딩)
@@ -208,6 +209,16 @@ message PingResponse {
     string spec_version_name = 4;  // 사용자 스펙 버전 문자열 (예: "1.0.0")
 }
 ```
+
+### 3.6 멀티 클라이언트 및 멀티 채널 응용 안내 (Multi-Client & Multi-Channel Considerations)
+
+WindRPC C 서버 엔진은 자원이 제한된 마이크로컨트롤러(MCU) 환경의 1:1 통신(단일 서버 - 단일 클라이언트)을 주요 목표로 설계된 무상태(Stateless), Zero-Heap 프레임워크입니다.
+
+만약 멀티 클라이언트나 복수 전송 채널(예: 동시 UART + BLE, 복수 UDP 등) 환경에서 확장하여 사용하고자 할 경우, 프레임워크 차원이 아닌 사용자 애플리케이션 상위 레이어에서 다음과 같은 수발신 구조를 직접 구축해야 합니다:
+
+1. **메시지 큐 기반 순차 처리 (Message Queue Processing)**: 다양한 채널에서 동시에 들어오는 수신 패킷을 RTOS 메시지 큐(FreeRTOS `Queue`, Zephyr `k_msgq` 등)나 링 버퍼에 격리/큐잉한 후, 단일 작업(Task/Thread)에서 `windrpc_handle(&txn)`을 순차적으로 호출하도록 구성해야 합니다.
+2. **클라이언트 식별 및 상위 라우팅 레이어 구축 (Client Routing Layer)**: WindRPC 6바이트 이진 헤더는 클라이언트 ID를 별도로 포함하지 않으므로, 요청 클라이언트를 구분하기 위해서는 사용자 상위 채널 프레임(예: 외각 채널 헤더 추가)을 두거나, 사용자 코드에서 요청 채널과 응답 채널을 매핑하는 라우팅 메커니즘을 구축해야 합니다.
+3. **Double Buffer 모드 적용**: 복수 채널 처리 시 동시 수발신 프레임 충돌을 방지하기 위해 `WINDRPC_USE_INPLACE_BUFFER 0` (Double Buffer 모드) 설정을 권장합니다.
 
 ---
 
