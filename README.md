@@ -102,19 +102,14 @@ WindRPC avoids recursive Protobuf envelope decoding. Instead, it pairs a 6-byte 
 
 > Pairing a 6-byte Little-Endian raw binary header (matching native ARM Cortex-M endianness) directly with a Protobuf payload eliminates outer Protobuf envelope parsing and reduces NanoPB callback overhead to zero.
 
-### Optional Transport Features: Framing (COBS) & Integrity Verification (CRC)
+### Transport Responsibility Scope: COBS Utilities & User-Defined Data Link Layer
 
-WindRPC does not force a heavy, transport-specific protocol wrapper. Developers have complete freedom to choose optional transport features based on the physical channel reliability:
+WindRPC intentionally leaves data-link-level tasks (such as custom packet framing and integrity checksums) to the user's application layer, avoiding complex protocol layer bloat on microcontrollers:
 
-- Optional COBS Framing (UART, RS-485, USB-CDC Serial Streams):
-  For continuous serial streams where packet boundaries must be identified, developers can optionally wrap frames with COBS (Consistent Overhead Byte Stuffing) (`buildCobsFrame` / `receiveBytes`). COBS guarantees that `0x00` only appears at the end of each packet as a frame delimiter.
-- Optional CRC / Checksum Verification (CRC16/CRC32, Checksum):
-  In noisy hardware environments (e.g. industrial RS-485 or long UART lines), developers may optionally append a CRC16/CRC32 checksum to the packet tail. For reliable transports with native checksums (BLE, TCP, USB-CDC), CRC is omitted to eliminate unnecessary processing overhead.
-- Raw Binary Direct Transport (UDP Datagrams, BLE, TCP, Shared Memory):
-  For transports that already ensure message framing and integrity natively, raw 6-byte binary header packets can be transmitted directly without any COBS or CRC overhead (`buildRawFrame` / `receiveRawDatagram`).
-- Embedded Standalone COBS Utilities: Auto-generated C# and JS/TS client SDKs include built-in COBS utilities exposed directly for optional standalone use in custom serial workflows:
-  - JS/TS: `import { cobsEncode, cobsDecode } from './WindRpcClient.js'` or `WindRpcClient.cobsEncode(bytes)`
-  - C#: `WindRpcClient.CobsEncode(bytes)` or `Cobs.Encode(bytes)`
+- Data Link Responsibilities Left to User: Full link-layer protocol stacks and CRC/checksum routines are not built into WindRPC natively. Developers can optionally append CRC16/CRC32 or outer channel wrappers in their custom transport layer when operating over noisy physical mediums (e.g. industrial RS-485).
+- Client SDK COBS Utilities: Auto-generated client SDKs (JS/TS, C#, Python) include built-in COBS encoding/decoding utilities (`0x00` frame delimiter) for convenience in continuous serial stream workflows (`buildCobsFrame` / `receiveBytes`).
+- C MCU Server COBS Integration: The C MCU server engine (`windrpc.c`) is stateless and does not include built-in COBS routines natively. Developers can refer to the Zephyr-targeted C COBS reference implementation logic (https://github.com/micro-artwork/cobs) or use Zephyr's native COBS module (`sys/cobs.h`).
+- Raw Binary Direct Transport: For channels where packet boundaries and integrity are guaranteed by the transport (UDP, BLE, TCP), raw 6-byte binary header frames can be transmitted directly without any COBS overhead (`buildRawFrame` / `receiveRawDatagram`).
 
 ---
 

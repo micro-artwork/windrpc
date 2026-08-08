@@ -16,7 +16,7 @@
 3. [아키텍처 및 이진 프레임 메커니즘](#3-아키텍처-및-이진-프레임-메커니즘)
    - [3.1 6바이트 이진 헤더 프레임 규격](#31-6바이트-이진-헤더-프레임-규격)
    - [3.2 16비트 Combined RPC ID 규칙](#32-16비트-combined-rpc-id-규칙)
-   - [3.3 전송 레이어 선택 (COBS 프레이밍 및 CRC)](#33-전송-레이어-선택-cobs-프레이밍-및-crc)
+   - [3.3 전송 레이어 역할 범위 및 COBS 유틸리티 제공](#33-전송-레이어-역할-범위-및-cobs-유틸리티-제공)
    - [3.4 수신/송출 버퍼 분리 옵션 (Double Buffering vs In-place)](#34-수신송출-버퍼-분리-옵션-double-buffering-vs-in-place)
    - [3.5 코어 버저닝 핸드셰이크 (`PingResponse`)](#35-코어-버저닝-핸드셰이크-pingresponse)
    - [3.6 멀티 클라이언트 및 멀티 채널 응용 안내](#36-멀티-클라이언트-및-멀티-채널-응용-안내-multi-client--multi-channel-considerations)
@@ -38,7 +38,7 @@ WindRPC는 마이크로프로세서(MCU) 및 이기종 클라이언트(Electron,
 - **Zero-Heap Static Memory**: 동적 메모리 할당(`malloc`/`free`) 없는 100% 정적 메모리 운용으로 장기 구동 안정성 보장.
 - **6바이트 이진 헤더 프레임**: Outer Protobuf 감싸기 구조 없이 6바이트 이진 헤더 + Protobuf 페이로드 직결 구조로 $O(1)$ Direct Lookup 디스패칭 수행.
 - **단일 YAML 명세 기반 코드 자동 생성**: `user_spec.yml` 파일 하나로 Protobuf 스키마, Nanopb C 서버 코드, JS/TS 및 C# 클라이언트 SDK 원스톱 자동 생성.
-- **독립적 전송 레이어**: COBS 프레이밍 및 CRC 무결성 검증을 사용자의 필요에 따라 선택 적용 가능.
+- **독립적 전송 레이어**: COBS 프레이밍 및 외부 CRC 무결성 검증을 사용자의 필요에 따라 선택 연동 가능.
 
 ---
 
@@ -182,10 +182,14 @@ $$\text{combined\_id} = (\text{service\_id} \ll 8) \mid \text{rpc\_id}$$
   - `0x0000`: 시스템 오류 응답 (전체 서비스 공통 예약)
   - `0x0601`: 코어 Ping / 버전 핸드셰이크 (항상 내장 제공)
 
-### 3.3 전송 레이어 선택 (COBS 프레이밍 및 CRC)
+### 3.3 전송 레이어 역할 범위 및 COBS 유틸리티 제공
 
-- **시리얼 바이트 스트림 (UART, RS-485, USB-CDC)**: 패킷 경계 구분을 위한 **COBS 프레이밍** (`buildCobsFrame` / `receiveBytes`) 적용.
-- **프레임 단위 채널 (UDP Datagram, BLE, TCP)**: COBS 오버헤드 없이 6바이트 헤더 + 페이로드를 직접 전송 (`buildRawFrame` / `receiveRawDatagram`).
+WindRPC는 마이크로컨트롤러 환경의 복잡도를 최소화하기 위해 패킷 프레이밍 및 데이터 무결성 검증(CRC 등)을 전송 채널(Data Link)을 담당하는 사용자 애플리케이션의 역할로 정의합니다:
+
+- **사용자 영역의 데이터 링크 구현**: 복잡한 데이터 링크 레이어 프로토콜 및 CRC/Checksum 계산 로직은 WindRPC 코어에 포함되지 않습니다. RS-485 등 노이즈 채널 필요 시 개발자가 전송 래퍼(Wrapper) 레이어에서 CRC16/CRC32를 직접 덧붙여 구현합니다.
+- **클라이언트 SDK COBS 내장**: 자동 생성되는 클라이언트 SDK(JS/TS, C#, Python)에는 연속 시리얼 스트림(UART, USB-CDC)의 `0x00` 구분자 처리용 COBS 인코딩/디코딩 유틸리티가 기본 포함되어 있습니다 (`buildCobsFrame` / `receiveBytes`).
+- **C MCU 서버 측 COBS 연동**: C MCU 서버 엔진(`windrpc.c`) 자체에는 COBS 로직이 내장되어 있지 않으나, Zephyr RTOS 용으로 구현된 C COBS 라이브러리([micro-artwork/cobs](https://github.com/micro-artwork/cobs)) 로직을 참고하거나 Zephyr 내장 모듈(`sys/cobs.h`)을 연동할 수 있습니다.
+- **프레임 단위 채널**: 전송 채널 자체에서 프레임 경계와 무결성이 보장되는 채널(UDP Datagram, BLE, TCP)에서는 COBS 오버헤드 없이 6바이트 이진 헤더 패킷 그대로 빠르게 전송합니다 (`buildRawFrame` / `receiveRawDatagram`).
 
 ### 3.4 수신/송출 버퍼 분리 옵션 (Double Buffering vs In-place)
 

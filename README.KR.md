@@ -102,19 +102,14 @@ WindRPC는 메시지 전체를 Protobuf 감싸기 구조(Envelope)로 재귀 디
 
 > ARM Cortex-M 및 BLE 바이트 순서와 동일한 6바이트 리틀엔디안 헤더를 $O(1)$ 정수 연산(또는 포인터 캐스팅)으로 바로 파싱한 후, 타겟 메시지의 Protobuf 페이로드만 정적 메모리로 직접 역직렬화하므로 감싸기 디코딩 오버헤드와 NanoPB 콜백 의존성이 완전히 제거됩니다.
 
-### 프레이밍(COBS) 및 무결성 검증(CRC) 관련
+### 전송 레이어 역할 범위: 사용자 정의 데이터 링크 & COBS 유틸리티 제공
 
-WindRPC는 프로토콜 수준에서 무겁거나 특정 전송 채널(Transport)에 종속되는 무결성 검증이나 프레이밍을 강제하지 않습니다. 전송 채널의 물리적 신뢰성에 따라 개발자가 필요한 부가 기능을 직접 선택하여 구성할 수 있습니다.
+WindRPC는 마이크로컨트롤러 환경의 복잡도를 줄이기 위해 패킷 프레이밍 및 데이터 무결성 검증(CRC 등)을 전송 채널(Data Link)을 담당하는 사용자 레이어의 역할로 정의합니다:
 
-- 선택적 COBS 프레이밍 (UART, RS-485, USB-CDC 시리얼 스트림):
-  패킷 경계(Frame Boundary) 구별이 필요한 연속 시리얼 바이트 스트림 통신 환경에서는 개발자가 선택적으로 COBS(Consistent Overhead Byte Stuffing) 알고리즘을 적용할 수 있습니다. 바이너리 데이터 내부의 `0x00` 바이트를 가변 포인터로 변환하여 패킷 끝에만 `0x00` 구분자(Delimiter)가 유일하게 위치하도록 구성됩니다.
-- 선택적 CRC / 무결성 검증 (CRC16/CRC32, Checksum):
-  노이즈가 심한 하드웨어 환경(예: 산업용 RS-485, 노이즈 환경의 UART)에서는 개발자가 패킷 테일에 CRC16/CRC32나 Checksum을 선택적으로 덧붙여 무결성을 검증할 수 있습니다. 이미 체크섬이 내장된 BLE, TCP, USB-CDC 채널에서는 CRC를 생략하여 오버헤드를 극단적으로 줄입니다.
-- Raw 바이너리 직결 (UDP Datagram, BLE, TCP, Shared Memory):
-  패킷 경계와 데이터 무결성이 이미 전송 레이어에서 보장되는 환경에서는 COBS 및 CRC 오버헤드 없이 6바이트 이진 헤더 패킷 그대로 빠르게 전송할 수 있습니다 (`buildRawFrame` / `receiveRawDatagram`).
-- 클라이언트 내장 COBS 유틸리티: C# 및 JS/TS 클라이언트 SDK 내부에는 COBS 모듈이 내장 내포되어 있어, RPC 프레임 생성 외에도 커스텀 시리얼 통신 개발 시 독립 유틸리티로 선택하여 호출할 수 있습니다.
-  - JS/TS: `import { cobsEncode, cobsDecode } from './WindRpcClient.js'` 또는 `WindRpcClient.cobsEncode(bytes)`
-  - C#: `WindRpcClient.CobsEncode(bytes)` 또는 `Cobs.Encode(bytes)`
+- 사용자 영역의 데이터 링크 구현: 복잡한 데이터 링크 레이어 프로토콜 및 CRC/Checksum 알고리즘은 WindRPC 코어에 포함되지 않으며, 노이즈가 심한 하드웨어(예: 산업용 RS-485) 환경 필요 시 사용자가 커스텀 전송 래퍼(Wrapper) 레이어에서 선택적으로 추가하여 구성합니다.
+- 클라이언트 SDK COBS 내장: 자동 생성되는 클라이언트 SDK(JS/TS, C#, Python)에는 연속 시리얼 스트림(UART, USB-CDC)의 `0x00` 구분자 처리용 COBS 인코딩/디코딩 유틸리티가 기본 포함되어 있습니다 (`buildCobsFrame` / `receiveBytes`).
+- C MCU 서버 측 COBS 연동: C MCU 서버 엔진(`windrpc.c`) 자체에는 COBS 로직이 내장되어 있지 않으나, Zephyr RTOS 용으로 구현된 C COBS 라이브러리(https://github.com/micro-artwork/cobs) 로직을 참고하거나 Zephyr 내장 모듈(`sys/cobs.h`)을 연동할 수 있습니다.
+- Raw 바이너리 직결: 전송 채널 자체에서 프레임 경계와 무결성이 보장되는 채널(UDP Datagram, BLE, TCP)에서는 COBS 오버헤드 없이 6바이트 이진 헤더 패킷 그대로 빠르게 전송합니다 (`buildRawFrame` / `receiveRawDatagram`).
 
 ---
 

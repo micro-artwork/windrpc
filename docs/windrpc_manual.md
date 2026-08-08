@@ -16,7 +16,7 @@ This document serves as the single unified reference manual for WindRPC, coverin
 3. [Architecture & Binary Protocol Mechanics](#3-architecture--binary-protocol-mechanics)
    - [3.1 6-Byte Binary Header Frame Specification](#31-6-byte-binary-header-frame-specification)
    - [3.2 16-Bit Combined RPC Identifiers](#32-16-bit-combined-rpc-identifiers)
-   - [3.3 Transport Choices (COBS Framing & CRC Verification)](#33-transport-choices-cobs-framing--crc-verification)
+   - [3.3 Transport Layer Responsibility & COBS Utilities](#33-transport-layer-responsibility--cobs-utilities)
    - [3.4 Buffer Isolation Modes (Double Buffering vs In-place)](#34-buffer-isolation-modes-double-buffering-vs-in-place)
    - [3.5 Core Version Handshake (`PingResponse`)](#35-core-version-handshake-pingresponse)
    - [3.6 Multi-Client & Multi-Channel Considerations](#36-multi-client--multi-channel-considerations)
@@ -38,7 +38,7 @@ WindRPC is a zero-heap, lightweight Remote Procedure Call (RPC) framework design
 - **Zero-Heap Static Memory**: 100% static allocation without dynamic memory (`malloc`/`free`), ensuring long-term MCU system stability.
 - **6-Byte Binary Header**: Direct coupling of a 6-byte raw binary header and Protobuf payload, enabling $O(1)$ direct lookup dispatching.
 - **Single YAML Code Generation**: Generates Protobuf schemas, Nanopb C server code, JS/TS SDK, and C# SDK from a single `user_spec.yml` file.
-- **Transport Independence**: Transport framing (COBS) and integrity checks (CRC) can be selectively enabled based on channel requirements.
+- **Transport Independence**: Transport framing (COBS) can be enabled, and optional application-level integrity checks (CRC) can be appended if required.
 
 ---
 
@@ -178,10 +178,14 @@ WindRPC combines a 6-byte raw binary header (Little-Endian) directly with Protob
 
 $$\text{combined\_id} = (\text{service\_id} \ll 8) \mid \text{rpc\_id}$$
 
-### 3.3 Transport Choices (COBS Framing & CRC Verification)
+### 3.3 Transport Layer Responsibility & COBS Utilities
 
-- **Serial Byte Streams (UART, RS-485, USB-CDC)**: Use **COBS framing** (`buildCobsFrame` / `receiveBytes`) for delimiter-based packet boundaries.
-- **Framed Channels (UDP Datagram, BLE, TCP)**: Transmit 6-byte raw binary frames directly without COBS overhead (`buildRawFrame` / `receiveRawDatagram`).
+WindRPC intentionally leaves data-link-level responsibilities (such as complex framing protocols and CRC/checksum calculation) to the user's application transport wrapper to avoid framework bloat on microcontrollers:
+
+- **Data-Link Responsibilities Left to User**: CRC algorithms and link-layer protocol stacks are not built into WindRPC. In noisy hardware environments (e.g. industrial RS-485), developers can optionally calculate and append CRC16/CRC32 in their custom transport wrapper layer.
+- **Client SDK COBS Utilities**: Auto-generated JS/TS, C#, and Python client SDKs include built-in COBS encoding/decoding utilities (`0x00` frame delimiter) for continuous serial streams.
+- **C MCU Server COBS Integration**: The C MCU server engine (`windrpc.c`) is stateless and does not include built-in COBS logic. Developers can refer to the Zephyr-targeted C COBS reference implementation logic ([micro-artwork/cobs](https://github.com/micro-artwork/cobs)) or use Zephyr's native COBS module (`sys/cobs.h`).
+- **Framed Channels**: For channels with native framing and integrity (UDP, BLE, TCP), raw 6-byte binary frames are transmitted directly without COBS overhead (`buildRawFrame` / `receiveRawDatagram`).
 
 ### 3.4 Buffer Isolation Modes (Double Buffering vs In-place)
 
