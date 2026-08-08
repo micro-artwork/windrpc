@@ -19,8 +19,19 @@ Protocol Buffers(Protobuf)와 NanoPB를 기반으로 마이크로컨트롤러(MC
 
 2. 서버 & 멀티 언어 클라이언트 풀 코드 자동 생성 (Full-Code Generation)
    - Protobuf & NanoPB 파일 자동 생성: `.proto` 스키마 및 마이크로컨트롤러용 정적 옵션(`.options`) 파일 자동 출력.
-   - C 서버 코드 자동 생성: 16비트 Combined RPC ID(`(service_id << 8) | rpc_id`) 기반 $O(1)$ Direct Lookup 디스패처 및 C 서버 스켈레톤 코드 자동 생성 (개발자는 애플리케이션 콜백 함수만 구현).
-   - 멀티 언어 클라이언트 SDK 자동 생성: C#(`TaskCompletionSource` 기반 비동기 API), JS/TS(`Promise` 기반 비동기 API) 및 Python(`asyncio` 기반 비동기 API) 클라이언트 SDK 풀 코드를 자동 생성합니다.
+   - C 서버 코드 자동 생성: 16비트 Combined RPC ID(`(service_id << 8) | rpc_id`) 기반 O(1) Direct Lookup 디스패처 및 C 서버 스켈레톤 코드 자동 생성 (개발자는 애플리케이션 콜백 함수만 구현).
+   - 멀티 언어 클라이언트 SDK 자동 생성: C#(`Task` 기반), JS/TS(`Promise` 기반 - 외부 의존성 0) 및 Python(`asyncio` 기반) 클라이언트 SDK 풀 코드를 자동 생성합니다.
+
+3. Zero-Heap & 정적 메모리 구조 (Static Memory Architecture)
+   - 생성된 서버 엔진 및 콜백 내 동적 메모리 할당(`malloc`/`free`) 0지향.
+   - NanoPB 제약 조건을 활용하여 리소스가 제한된 마이크로컨트롤러(ARM Cortex-M, ESP32 등) 환경에 최적화.
+
+4. 6바이트 이진 헤더 및 O(1) Direct Lookup
+   - 고정 6바이트 raw 이진 헤더 `[RPC_ID(2B)][SEQ_ID(2B)][PAYLOAD_LEN(2B)]`를 Protobuf 페이로드와 직접 결합.
+   - 중첩 Protobuf 인벨롭 디코딩 오버헤드를 제거하여 수신 프레임을 O(1) 핸들러 테이블로 즉시 디스패치.
+
+5. 트랜스포트 독립성 및 프레이밍 유연성 (Transport Agnostic)
+   - COBS 프레이밍 기반의 시리얼 바이트 스트림(UART, USB-CDC)과 데이터그램 패킷 채널(UDP, BLE, TCP)을 모두 지원.
 
 ---
 

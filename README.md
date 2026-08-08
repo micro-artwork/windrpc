@@ -19,8 +19,19 @@ Built upon Protocol Buffers and NanoPB, WindRPC enables Remote Procedure Calls (
 
 2. Full-Code Generation (Server & Multi-Language Clients)
    - Protobuf & NanoPB Generation: Automatically generates `.proto` schemas and Nanopb static memory option files (`.options`).
-   - C Server Code Generation: Automatically generates C server dispatchers with $O(1)$ direct lookup (`(service_id << 8) | rpc_id`) and callback skeletons for embedded C MCUs (developers only implement business logic callbacks).
-   - Multi-Language Client SDKs: Automatically generates full-code C# (Async `Task` based), JavaScript/TypeScript (Async `Promise` based), and Python (Async `asyncio` based) client SDKs.
+   - C Server Code Generation: Automatically generates C server dispatchers with O(1) direct lookup (`(service_id << 8) | rpc_id`) and callback skeletons for embedded C MCUs (developers only implement business logic callbacks).
+   - Multi-Language Client SDKs: Automatically generates native C# (Async `Task` based), JavaScript/TypeScript (Async `Promise` based - Zero Dependencies), and Python (Async `asyncio` based) client SDKs.
+
+3. Zero-Heap & Static Memory Architecture
+   - 100% static memory allocation without dynamic memory allocation (`malloc`/`free`) in generated code and callbacks.
+   - Tailored specifically for resource-constrained microcontrollers (ARM Cortex-M, ESP32, etc.) using NanoPB constraints.
+
+4. 6-Byte Binary Header & Zero-Envelope Dispatch
+   - Fixed 6-byte raw binary header `[RPC_ID(2B)][SEQ_ID(2B)][PAYLOAD_LEN(2B)]` directly preceding Protobuf payload bytes.
+   - Eliminates outer Protobuf envelope decoding overhead and enables instant O(1) lookup table dispatch.
+
+5. Transport Agnostic & Flexible Framing
+   - Works seamlessly across serial byte streams (UART, USB-CDC) via optional COBS framing and packet datagram channels (UDP, BLE, TCP).
 
 ---
 
