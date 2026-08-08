@@ -54,7 +54,7 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Client as 클라이언트 앱<br/>(JS / C# / Python)
+    participant Client as 클라이언트 앱
     participant Transport as 물리 전송 채널<br/>(UART / USB-CDC / BLE / UDP)
     participant Engine as WindRPC C 서버 엔진<br/>(C MCU 서버)
     participant App as 애플리케이션 콜백<br/>(windrpc_callbacks.c)

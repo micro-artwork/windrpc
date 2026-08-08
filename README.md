@@ -54,7 +54,7 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Client as Client Application<br/>(JS / C# / Python)
+    participant Client as Client Application
     participant Transport as Physical Channel<br/>(UART / USB-CDC / BLE / UDP)
     participant Engine as WindRPC C Server Engine<br/>(C MCU Server)
     participant App as Application Callbacks<br/>(windrpc_callbacks.c)
