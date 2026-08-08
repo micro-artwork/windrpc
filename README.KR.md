@@ -35,8 +35,7 @@ flowchart TD
     YAML["user_spec.yml<br/>(RPC 디스크립터 / RPC Descriptor)"] --> GEN["windrpc_gen.py<br/>(WindRPC 제너레이터 엔진)"]
     GEN --> Proto[".proto 및 .options 파일<br/>(Nanopb 정적 스키마)"]
     GEN --> CServer["C 서버 엔진<br/>(windrpc.h/c, 콜백 스켈레톤)"]
-    GEN --> JSClient["JS/TS 클라이언트 SDK<br/>(WindRpcClient.js - 외부 의존성 0)"]
-    GEN --> CSClient["C# 클라이언트 SDK<br/>(WindRpcClient.cs + 데이터 클래스)"]
+    GEN --> Client["클라이언트 SDK<br/>JS/TS: WindRpcClient.js (외부 의존성 0)<br/>C#: WindRpcClient.cs + 데이터 클래스<br/>Python: WindRpcClient.py (asyncio)"]
 ```
 
 ### 2. 실행 시간 통신 및 디스패치 흐름 (Runtime Communication & Dispatch Flow)
@@ -44,7 +43,7 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Client as 클라이언트 앱<br/>(Electron JS / C# WinForms)
+    participant Client as 클라이언트 앱<br/>(JS / C# / Python)
     participant Transport as 물리 전송 채널<br/>(UART / USB-CDC / BLE / UDP)
     participant Engine as WindRPC C 서버 엔진<br/>(C MCU 서버)
     participant App as 애플리케이션 콜백<br/>(windrpc_callbacks.c)

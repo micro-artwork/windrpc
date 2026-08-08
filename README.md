@@ -35,8 +35,7 @@ flowchart TD
     YAML["user_spec.yml<br/>(RPC Descriptor)"] --> GEN["windrpc_gen.py<br/>(WindRPC Generator Engine)"]
     GEN --> Proto[".proto & .options Files<br/>(Nanopb Schemas)"]
     GEN --> CServer["C Server Engine<br/>(windrpc.h/c, callbacks skeleton)"]
-    GEN --> JSClient["JS/TS Client SDK<br/>(WindRpcClient.js - Zero Dep)"]
-    GEN --> CSClient["C# Client SDK<br/>(WindRpcClient.cs + Data Classes)"]
+    GEN --> Client["Client SDK<br/>JS/TS: WindRpcClient.js (Zero Dep)<br/>C#: WindRpcClient.cs + Data Classes<br/>Python: WindRpcClient.py (asyncio)"]
 ```
 
 ### 2. Runtime Communication & Dispatch Flow
@@ -44,7 +43,7 @@ flowchart TD
 ```mermaid
 sequenceDiagram
     autonumber
-    participant Client as Client Application<br/>(Electron JS / C# WinForms)
+    participant Client as Client Application<br/>(JS / C# / Python)
     participant Transport as Physical Channel<br/>(UART / USB-CDC / BLE / UDP)
     participant Engine as WindRPC C Server Engine<br/>(C MCU Server)
     participant App as Application Callbacks<br/>(windrpc_callbacks.c)
