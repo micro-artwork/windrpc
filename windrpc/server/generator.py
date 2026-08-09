@@ -322,7 +322,7 @@ def _generate_common_header_content(spec_data, package_name):
 
     # Resolve core version from core_info (populated by merge_specs from core_spec.yml info)
     core_info = spec_data.get('core_info', {})
-    core_ver_name = core_info.get('version_name') or core_info.get('version') or '0.1.0'
+    core_ver_name = core_info.get('version_name') or core_info.get('version') or '0.1.1'
     core_ver_code = core_info.get('version_code')
     if core_ver_code is None:
         try:

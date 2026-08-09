@@ -146,8 +146,7 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
         LOG_ERR("Unknown RPC ID: 0x%04X", rpc_id);
         ctx->status_code = (int32_t)WINDRPC_STATUS_CODE(UNIMPLEMENTED);
         snprintf(ctx->status_message, WINDRPC_STATUS_MESSAGE_MAX_LEN, "RPC ID 0x%04X not found", rpc_id);
-        send_flat_error_response(buffer, seq_id, ctx->status_code, ctx->status_message);
-        return -1;
+        return send_flat_error_response(buffer, seq_id, ctx->status_code, ctx->status_message);
     }
 
     ctx->handler = handler;
@@ -160,8 +159,7 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
             LOG_ERR("Failed to decode payload for RPC ID 0x%04X: %s", rpc_id, PB_GET_ERROR(&istream));
             ctx->status_code = (int32_t)WINDRPC_STATUS_CODE(INVALID_DATA_FORMAT);
             snprintf(ctx->status_message, WINDRPC_STATUS_MESSAGE_MAX_LEN, "Invalid data format");
-            send_flat_error_response(buffer, seq_id, ctx->status_code, ctx->status_message);
-            return -1;
+            return send_flat_error_response(buffer, seq_id, ctx->status_code, ctx->status_message);
         }
     }
 
@@ -172,8 +170,7 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
         LOG_WRN("Execution failed with application error: %d", status);
         ctx->status_code = status;
         const char* msg = (ctx->status_message[0] != '\0') ? ctx->status_message : windrpc_strerror(status);
-        send_flat_error_response(buffer, seq_id, status, msg);
-        return status;
+        return send_flat_error_response(buffer, seq_id, status, msg);
     }
 
     // REQUEST_ONLY pattern: skip TX response
@@ -200,8 +197,7 @@ int32_t windrpc_handle(struct windrpc_transaction* txn) {
     if (handler->res_fields && res_ptr) {
         if (!pb_encode(&ostream, handler->res_fields, res_ptr)) {
             LOG_ERR("Failed to encode response for RPC ID 0x%04X", rpc_id);
-            send_flat_error_response(buffer, seq_id, WINDRPC_STATUS_CODE(INTERNAL), "Failed to encode response");
-            return -1;
+            return send_flat_error_response(buffer, seq_id, WINDRPC_STATUS_CODE(INTERNAL), "Failed to encode response");
         }
     }
 
@@ -233,7 +229,7 @@ int32_t windrpc_process_packet(const uint8_t* rx_packet, uint16_t rx_len,
 
     int32_t err = windrpc_handle(&txn);
 
-    if (!err && txn.buffer.bytes_written > 0 && out_resp_buf && out_resp_len) {
+    if (txn.buffer.bytes_written > 0 && out_resp_buf && out_resp_len) {
         uint16_t copy_len = (txn.buffer.bytes_written < max_resp_len) ? txn.buffer.bytes_written : max_resp_len;
         memcpy(out_resp_buf, txn.buffer.tx_data, copy_len);
         *out_resp_len = copy_len;
