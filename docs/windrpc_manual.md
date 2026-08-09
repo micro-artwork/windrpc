@@ -274,6 +274,10 @@ void process_incoming_packet(uint8_t *data, size_t len) {
 }
 ```
 
+> [!NOTE]
+> **`windrpc_handle(&txn)` Return Value Semantics**
+> Returning `0` from `windrpc_handle` signifies that a response packet (either a normal RPC response or a `0x0000` System Error response) was successfully generated into `tx_data` for transmission. A negative return value (`-1`) indicates a fatal framing or buffer size failure where no response packet could be produced. Application-level RPC error codes are stored in `txn.context.status_code`.
+
 ### 4.3 Build Rules & Concurrency
 
 - `prj.conf` settings:
