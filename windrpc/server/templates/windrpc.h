@@ -57,7 +57,8 @@ void windrpc_set_error(struct windrpc_context* ctx, int32_t code, const char* me
 /**
  * @brief Transport-agnostic helper to process raw packet bytes and copy response frame.
  * 
- * @return 0 on successful frame production, non-zero on fatal internal error.
+ * @return 0 on successful response frame production (including normal responses and 0x0000 System Error frames), 
+ *         non-zero on fatal internal error where no response frame could be generated.
  */
 int32_t windrpc_process_packet(const uint8_t* rx_packet, uint16_t rx_len,
                                uint8_t* out_resp_buf, uint16_t max_resp_len, uint16_t* out_resp_len);
