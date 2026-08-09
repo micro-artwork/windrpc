@@ -277,6 +277,10 @@ void process_incoming_packet(uint8_t *data, size_t len) {
 }
 ```
 
+> [!NOTE]
+> **`windrpc_handle(&txn)` 반환값 시맨틱**
+> `windrpc_handle`이 `0`을 반환하는 것은 "송신 채널로 보낼 응답 패킷(정상 응답 또는 `0x0000` 시스템 에러 패킷)이 `tx_data`에 정상 생성됨"을 의미합니다. 음수(`-1`) 반환은 버퍼 크기 부족 등 패킷 생성이 불가능한 치명적 시스템 오류 발생 시에만 리턴됩니다. 애플리케이션 수준의 에러 코드는 `txn.context.status_code` 및 패킷 페이로드에 저장되어 전송됩니다.
+
 ### 4.3 빌드 및 멀티스레드 주의사항
 
 - `prj.conf` 설정:

@@ -104,7 +104,7 @@ int main(void) {
     txn.buffer.bytes_written = 6;
 
     int32_t err_unknown = windrpc_handle(&txn);
-    assert(err_unknown == -1);
+    assert(err_unknown == 0);
     assert(txn.buffer.bytes_written >= 6);
     assert(tx_buf[0] == 0x00 && tx_buf[1] == 0x00); // System Error RPC ID = 0x0000
     assert(tx_buf[2] == 0x07 && tx_buf[3] == 0x00); // seq_id = 7
